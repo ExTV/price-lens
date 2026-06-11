@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Price Lens — what your tokens actually cost</title>
+<meta name="description" content="Live OpenRouter pricing for frontier Anthropic, OpenAI, Google & Qwen models, with your real monthly usage costed against every model." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css?v=20260611c" />
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+<div class="glow glow-a" aria-hidden="true"></div>
+<div class="glow glow-b" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◧</span>
+    <span class="brand-name">Price&nbsp;Lens</span>
+    <span class="brand-sub">openrouter pricing, de-confused</span>
+  </div>
+  <div class="topbar-right">
+    <div class="status" id="status" title="Data source">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-text" id="statusText">loading…</span>
+    </div>
+    <button class="btn-refresh" id="refreshBtn" title="Re-fetch live pricing">
+      <span class="refresh-ico" aria-hidden="true">↻</span> Refresh
+    </button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <h1 class="hero-title">What your tokens <em>actually</em> cost.</h1>
+    <p class="hero-lede">
+      OpenRouter quotes input, output, cache-read and cache-write separately — so the sticker price tells you
+      almost nothing. Enter what you burn in a month and see the real bill on every frontier model.
+    </p>
+  </section>
+
+  <section class="usage" id="usagePanel" aria-label="Your monthly usage">
+    <div class="usage-head">
+      <h2>Your monthly usage</h2>
+      <div class="usage-actions">
+        <button class="btn-reset" id="pasteToggle" title="Paste your Hermes Insights block to auto-fill">⎘ Load from Hermes Insights</button>
+        <button class="btn-reset" id="resetBtn" title="Restore the sample figures">⤺ Reset</button>
+      </div>
+    </div>
+    <div class="paste-box" id="pasteBox" hidden>
+      <textarea id="pasteArea" spellcheck="false"
+        placeholder="Paste your Hermes Insights output here.&#10;The line it reads is:  Tokens: 331,234,491 (in: 56,828,463 / out: 1,669,359)&#10;→ in = fresh input · out = output · (total − in − out) = cached reads."></textarea>
+      <div class="paste-row">
+        <span class="paste-msg" id="pasteMsg"></span>
+        <button class="btn-load" id="pasteLoad">Parse &amp; load ⏎</button>
+      </div>
+    </div>
+    <div class="usage-grid">
+      <label class="field" data-kind="input">
+        <span class="field-label">Fresh input <small>uncached prompt</small></span>
+        <input type="text" inputmode="numeric" id="u_input" />
+        <span class="field-unit">tokens / mo</span>
+      </label>
+      <label class="field" data-kind="output">
+        <span class="field-label">Output <small>completion</small></span>
+        <input type="text" inputmode="numeric" id="u_output" />
+        <span class="field-unit">tokens / mo</span>
+      </label>
+      <label class="field" data-kind="cache_read">
+        <span class="field-label">Cached reads <small>re-sent context</small></span>
+        <input type="text" inputmode="numeric" id="u_cache_read" />
+        <span class="field-unit">tokens / mo</span>
+      </label>
+      <label class="field" data-kind="cache_write">
+        <span class="field-label">Cache writes <small>optional</small></span>
+        <input type="text" inputmode="numeric" id="u_cache_write" />
+        <span class="field-unit">tokens / mo</span>
+      </label>
+    </div>
+    <div class="hitrate" id="hitRow">
+      <div class="hitrate-head">
+        <span class="hitrate-lbl">Cache hit rate</span>
+        <span class="hitrate-val" id="hitVal">—</span>
+        <div class="hitrate-presets" id="hitPresets">
+          <button type="button" class="hr-preset" data-hr="90">heavy agent 90%</button>
+          <button type="button" class="hr-preset" data-hr="70">mixed 70%</button>
+          <button type="button" class="hr-preset" data-hr="40">low 40%</button>
+          <button type="button" class="hr-preset" data-hr="0">none 0%</button>
+        </div>
+      </div>
+      <input type="range" id="hitSlider" min="0" max="100" step="1" value="75" aria-label="Cache hit rate" />
+      <p class="hitrate-hint" id="hitHint"></p>
+    </div>
+    <div class="period" id="periodRow">
+      <span class="period-lbl">Monthly basis</span>
+      <span class="period-seg">data spans
+        <input type="text" inputmode="decimal" id="p_data" class="period-in" />
+        <span class="period-unit">days</span>
+      </span>
+      <span class="period-arrow">→</span>
+      <span class="period-seg">bill over
+        <input type="text" inputmode="decimal" id="p_proj" class="period-in" />
+        <span class="period-unit">days</span>
+      </span>
+      <span class="period-mult" id="periodMult">×1</span>
+      <span class="period-hint">paste a “Last 7 days” report and it’s scaled to a real 30-day month</span>
+    </div>
+    <p class="usage-note" id="usageNote"></p>
+  </section>
+
+  <section class="podium" id="podium" aria-label="Cheapest models for your workload"></section>
+
+  <section class="controls">
+    <div class="chips" id="chips" role="tablist"></div>
+    <div class="controls-right">
+      <div class="search">
+        <span class="search-ico" aria-hidden="true">⌕</span>
+        <input type="text" id="search" placeholder="filter models…" autocomplete="off" />
+      </div>
+      <label class="sortwrap">
+        <span>sort</span>
+        <select id="sort">
+          <option value="cost-asc">Your cost ↑ (cheapest)</option>
+          <option value="cost-desc">Your cost ↓ (priciest)</option>
+          <option value="in-asc">Input $/M ↑</option>
+          <option value="out-asc">Output $/M ↑</option>
+          <option value="ctx-desc">Context ↓</option>
+          <option value="name-asc">Name A–Z</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="table-wrap">
+    <table class="grid" id="grid">
+      <thead>
+        <tr>
+          <th class="col-model">Model</th>
+          <th class="col-ctx">Context</th>
+          <th class="num">Input <small>$/M</small></th>
+          <th class="num">Output <small>$/M</small></th>
+          <th class="num">Cache&nbsp;read <small>$/M</small></th>
+          <th class="num col-cost">Your monthly cost</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="empty" id="empty" hidden>No models match that filter.</p>
+  </section>
+
+  <footer class="foot">
+    <p>
+      Pricing data via <a href="https://openrouter.ai/models" target="_blank" rel="noopener">OpenRouter</a>’s
+      public models API. Not affiliated with OpenRouter. Prices are list rates and can vary by routed provider;
+      cached-read figures assume native prompt caching where the model supports it, otherwise reads are billed as
+      fresh input. Your usage stays in your browser — nothing is sent anywhere.
+    </p>
+    <p class="foot-meta" id="footMeta"></p>
+  </footer>
+</main>
+
+<script src="snapshot.js?v=20260611c"></script>
+<script src="app.js?v=20260611c"></script>
+</body>
+</html>
