@@ -6,8 +6,10 @@ cache-read and cache-write are all priced separately — and turns it into a
 single number you actually care about: **what your real monthly usage costs on
 every model.**
 
-> Live demo: open `index.html` in any browser. It's a static page — no build
-> step, no backend, nothing leaves your machine.
+> **Live site: https://extv.github.io/price-lens/**
+>
+> It's a static page — no build step, no backend, nothing leaves your machine.
+> You can also just open `index.html` in any browser.
 
 ---
 
