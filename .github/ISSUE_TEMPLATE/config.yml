@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Question or discussion
+    url: https://github.com/ExTV/price-lens/discussions
+    about: For general questions or ideas that aren't a bug or feature request.
+  - name: 🔌 OpenRouter pricing
+    url: https://openrouter.ai/models
+    about: Prices are sourced from OpenRouter — check the live rates here first.

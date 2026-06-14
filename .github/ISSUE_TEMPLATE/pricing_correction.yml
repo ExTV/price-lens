@@ -1,0 +1,47 @@
+name: "💲 Model / pricing correction"
+description: A price looks wrong, or a model is missing or outdated.
+title: "[Pricing]: "
+labels: ["pricing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this to report an incorrect rate, a missing model, or a model that's
+        out of date. Prices come from OpenRouter's public models API and can vary
+        by routed provider, so a link helps us confirm.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What's the issue?
+      options:
+        - A price/rate is wrong
+        - A model is missing
+        - A model is outdated or should be removed
+        - Context length or capabilities are wrong
+    validations:
+      required: true
+  - type: input
+    id: model-id
+    attributes:
+      label: Model ID
+      description: The OpenRouter id, e.g. `anthropic/claude-opus-4.8` or `mistralai/mistral-large-3`.
+      placeholder: provider/model-name
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What's wrong / what it should be
+      description: Which field is off (input, output, cache read/write, context) and the correct value.
+      placeholder: |
+        Output rate shows $X/M but OpenRouter lists $Y/M.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source link
+      description: Link to the OpenRouter model page or pricing that backs this up.
+      placeholder: https://openrouter.ai/<provider>/<model>
+    validations:
+      required: false
