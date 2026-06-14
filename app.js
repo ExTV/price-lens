@@ -6,7 +6,6 @@
 "use strict";
 
 const API = "https://openrouter.ai/api/v1/models";
-const PROVIDER_RE = /^~?(anthropic|openai|google|qwen)\//;
 
 // Generic sample workload so the page is alive on first load.
 // Replace via the field inputs or by pasting your own Hermes Insights block.
@@ -24,12 +23,50 @@ const FEATURED = [
   { ids: ["google/gemini-3.1-pro-preview-customtools"],                 rx: /gemini-3\.1-pro.*customtool/, label: "Gemini 3.1 Pro" }
 ];
 
+// Known providers → display label + chip colour. Any provider not listed here
+// still shows up (chips/sort are derived from the live data) with a fallback tint.
 const PROV = {
-  anthropic: { label: "Anthropic", color: "var(--anthropic)" },
-  openai:    { label: "OpenAI",    color: "var(--openai)" },
-  google:    { label: "Google",    color: "var(--google)" },
-  qwen:      { label: "Qwen",      color: "var(--qwen)" }
+  anthropic:    { label: "Anthropic",  color: "var(--anthropic)" },
+  openai:       { label: "OpenAI",     color: "var(--openai)" },
+  google:       { label: "Google",     color: "var(--google)" },
+  qwen:         { label: "Qwen",        color: "var(--qwen)" },
+  mistralai:    { label: "Mistral",    color: "#ff8205" },
+  "meta-llama": { label: "Meta",       color: "#4d8bf0" },
+  deepseek:     { label: "DeepSeek",   color: "#4d6bfe" },
+  "x-ai":       { label: "xAI",        color: "#9aa0a6" },
+  cohere:       { label: "Cohere",     color: "#ff7759" },
+  microsoft:    { label: "Microsoft",  color: "#5ea0ef" },
+  nvidia:       { label: "NVIDIA",     color: "#76b900" },
+  "z-ai":       { label: "Z.AI",       color: "#5b78ff" },
+  moonshotai:   { label: "MoonshotAI", color: "#19b3b3" },
+  minimax:      { label: "MiniMax",    color: "#ff5b6a" },
+  ai21:         { label: "AI21",       color: "#e35caa" },
+  amazon:       { label: "Amazon",     color: "#ff9b3d" },
+  nousresearch: { label: "Nous",       color: "#c0a3ff" },
+  perplexity:   { label: "Perplexity", color: "#20b8cd" },
+  liquid:       { label: "Liquid",     color: "#4fb0c6" },
+  inception:    { label: "Inception",  color: "#7bd1c0" },
+  reka:         { label: "Reka",       color: "#ff7a45" },
+  baidu:        { label: "Baidu",      color: "#5566ff" },
+  tencent:      { label: "Tencent",    color: "#3fb950" },
+  "01-ai":      { label: "01.AI",      color: "#2dd4bf" },
+  inflection:   { label: "Inflection", color: "#b08cff" },
+  allenai:      { label: "Ai2",        color: "#f0529c" },
+  "arcee-ai":   { label: "Arcee",      color: "#6bcf9b" },
+  stepfun:      { label: "StepFun",    color: "#7c83ff" },
+  thedrummer:   { label: "TheDrummer", color: "#d98c5f" },
+  sao10k:       { label: "Sao10K",     color: "#caa46a" },
+  agentica:     { label: "Agentica",   color: "#8bd17c" }
 };
+
+// stable fallback tint for providers we don't have a brand colour for
+const FALLBACK_COLORS = ["#9c8f7a", "#7f9cb0", "#b08f9c", "#8fb09c", "#a59cb0", "#b0a88f"];
+function provMeta(prov) {
+  if (PROV[prov]) return PROV[prov];
+  let h = 0;
+  for (let i = 0; i < prov.length; i++) h = (h * 31 + prov.charCodeAt(i)) >>> 0;
+  return { label: prov, color: FALLBACK_COLORS[h % FALLBACK_COLORS.length] };
+}
 
 /* ---- state --------------------------------------------------------------- */
 let MODELS = [];                       // raw {id,name,context_length,pricing}
@@ -125,7 +162,7 @@ function cost(m, u) {
 function decorate() {
   return MODELS.map(m => {
     const prov = providerOf(m.id);
-    return { m, prov, meta: PROV[prov] || { label: prov, color: "var(--faint)" }, name: cleanName(m), c: cost(m, usage) };
+    return { m, prov, meta: provMeta(prov), name: cleanName(m), c: cost(m, usage) };
   });
 }
 
@@ -147,9 +184,9 @@ function hasVision(m) {
   const i = m.architecture && m.architecture.input_modalities;
   return Array.isArray(i) && i.includes("image");
 }
+// "chat completions" = every text→text LLM in the catalog, across all providers.
 function pick(arr) {
-  return arr.filter(x => PROVIDER_RE.test(x.id))
-            .filter(isTextModel)
+  return arr.filter(isTextModel)
             .map(x => ({ id: x.id, name: x.name, context_length: x.context_length, pricing: x.pricing, architecture: x.architecture }));
 }
 
@@ -195,15 +232,21 @@ function applyFilterSort(list) {
     "in-asc":    (a, b) => a.c.inR - b.c.inR,
     "out-asc":   (a, b) => a.c.outR - b.c.outR,
     "ctx-desc":  (a, b) => (b.m.context_length || 0) - (a.m.context_length || 0),
-    "name-asc":  (a, b) => a.name.localeCompare(b.name)
+    "name-asc":  (a, b) => a.name.localeCompare(b.name),
+    "prov-asc":  (a, b) => a.meta.label.localeCompare(b.meta.label) || a.c.total - b.c.total
   }[sortMode];
   return [...out].sort(by);
 }
 
 function renderChips(all) {
   const counts = all.reduce((a, d) => (a[d.prov] = (a[d.prov] || 0) + 1, a), {});
+  // only providers actually present, busiest first (ties → label A–Z)
+  const provs = Object.keys(counts).sort((a, b) =>
+    counts[b] - counts[a] || provMeta(a).label.localeCompare(provMeta(b).label));
   const items = [{ key: "all", label: "All", color: "var(--text)", n: all.length },
-    ...Object.keys(PROV).map(k => ({ key: k, label: PROV[k].label, color: PROV[k].color, n: counts[k] || 0 }))];
+    ...provs.map(k => ({ key: k, label: provMeta(k).label, color: provMeta(k).color, n: counts[k] }))];
+  // if the active filter no longer matches any model, fall back to All
+  if (filterProv !== "all" && !counts[filterProv]) filterProv = "all";
   $("#chips").innerHTML = items.map(it => `
     <button class="chip ${filterProv === it.key ? "active" : ""}" data-prov="${it.key}" role="tab">
       <span class="dot" style="--c:${it.color}"></span>${it.label}<span class="cnt">${it.n}</span>
