@@ -1,0 +1,59 @@
+name: "🐞 Bug report"
+description: Something on the page doesn't work or looks broken.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in what you can —
+        the more detail, the faster it gets fixed.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I sort by "Provider A–Z", the table…
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we make it happen?
+      placeholder: |
+        1. Open the page
+        2. Enter usage of …
+        3. Click …
+        4. See …
+    validations:
+      required: true
+  - type: input
+    id: data-source
+    attributes:
+      label: Data source shown
+      description: The status pill in the top-right — "live …" or "snapshot …".
+      placeholder: live · 07:21
+    validations:
+      required: false
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome / Chromium
+        - Firefox
+        - Safari
+        - Edge
+        - Mobile browser
+        - Other
+    validations:
+      required: false
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors (optional)
+      description: Anything red in your browser's developer console (F12 → Console).
+      render: text
+    validations:
+      required: false
