@@ -165,7 +165,9 @@ function cost(m, u) {
   const unknown = !isFinite(inR) || !isFinite(outR);
 
   const crRaw = rateOf(p.input_cache_read);
-  const hasCache = isFinite(crRaw) && crRaw > 0;
+  // Models without caching omit the field entirely (→ NaN). A published rate of
+  // exactly 0 means reads are free, not unsupported — don't bill those as input.
+  const hasCache = isFinite(crRaw);
   const crR = hasCache ? crRaw : inR;             // no native caching → reads cost full input rate
 
   const cwRaw = rateOf(p.input_cache_write);
@@ -679,9 +681,16 @@ function bindUsage() {
 }
 
 function bindPeriod() {
+  // An empty field means "not set yet" → default. A typed 0 (or junk) is a real
+  // edit and clamps to the 0.1-day floor; `|| 30` conflated the two and made the
+  // multiplier leap to 30 mid-keystroke whenever the box was briefly cleared.
+  const days = sel => {
+    const raw = $(sel).value.trim();
+    return raw === "" ? 30 : Math.max(0.1, parseNum(raw));
+  };
   const upd = () => {
-    period.dataDays    = Math.max(0.1, parseNum($("#p_data").value) || 30);
-    period.projectDays = Math.max(0.1, parseNum($("#p_proj").value) || 30);
+    period.dataDays    = days("#p_data");
+    period.projectDays = days("#p_proj");
     recalcUsage();
     writeFields();
     writePeriod();
@@ -764,13 +773,29 @@ function loadInsights() {
     setPasteMsg("Couldn't find a “Tokens: … (in: … / out: …)” line — paste the full Insights block.", true);
     return;
   }
-  base = {
-    input:       inp ?? 0,
-    output:      out ?? 0,
-    cache_read:  (total != null) ? Math.max(0, total - (inp ?? 0) - (out ?? 0)) : 0,
-    cache_write: 0
-  };
-  period.dataDays = windowDays ? Math.round(windowDays * 100) / 100 : 30;
+  // "total − in − out = cached reads" only holds when we actually found in AND out.
+  // Without that split we can't tell cheap cached reads from full-price fresh input,
+  // and guessing "it's all cache" understates the bill by an order of magnitude — so
+  // bill everything that isn't known output as fresh input, and say so.
+  const knownSplit = inp != null && out != null;
+  if (knownSplit) {
+    base = {
+      input:       inp,
+      output:      out,
+      cache_read:  total != null ? Math.max(0, total - inp - out) : 0,
+      cache_write: 0
+    };
+  } else {
+    const o = out ?? 0;
+    base = {
+      input:       total != null ? Math.max(0, total - o) : (inp ?? 0),
+      output:      o,
+      cache_read:  0,
+      cache_write: 0
+    };
+  }
+  const haveWindow = windowDays != null;      // a detected "Last 0 hours" is not "no window"
+  period.dataDays = haveWindow ? Math.max(0.1, Math.round(windowDays * 100) / 100) : 30;
   period.projectDays = 30;
   recalcUsage();
   writeFields();
@@ -779,10 +804,12 @@ function loadInsights() {
   render();
   flashCosts();
   const s = periodScale();
-  const note = windowDays
+  const note = haveWindow
     ? `Detected a ${period.dataDays}-day window → scaled ×${(Math.round(s * 100) / 100)} to a 30-day month.`
     : `No “Last N days” line found — assuming ~30 days (no scaling).`;
-  setPasteMsg(`Loaded ✓ ${note}  ${f.format(usage.input)} in · ${f.format(usage.output)} out · ${f.format(usage.cache_read)} cached / mo`, false);
+  const warn = knownSplit ? "" :
+    " ⚠ No “in: … / out: …” split found, so everything is costed as fresh input — set the cache hit rate below to model your real split.";
+  setPasteMsg(`Loaded ✓ ${note}  ${f.format(usage.input)} in · ${f.format(usage.output)} out · ${f.format(usage.cache_read)} cached / mo${warn}`, !knownSplit);
 }
 
 function bindPaste() {
