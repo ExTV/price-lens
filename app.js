@@ -217,9 +217,17 @@ function isFreeTier(m) {
   return FREE_RX.test(m.id || "") || FREE_RX.test(m.name || "");
 }
 
+// Meta-routers (openrouter/fusion, /pareto-code, /bodybuilder, /auto) report "-1"
+// for every rate because you pay whatever the model they pick charges. There is
+// nothing to cost, so they're dropped rather than listed as "variable".
+function isUncostable(m) {
+  const c = cost(m, DEFAULTS);
+  return c.unknown;
+}
+
 // "chat completions" = every priced text→text LLM in the catalog, across all providers.
 function pick(arr) {
-  return arr.filter(m => isTextModel(m) && !isFreeTier(m))
+  return arr.filter(m => isTextModel(m) && !isFreeTier(m) && !isUncostable(m))
             .map(x => ({ id: x.id, name: x.name, context_length: x.context_length, pricing: x.pricing, architecture: x.architecture }));
 }
 
@@ -389,14 +397,12 @@ function row(d, maxCost) {
     (c.unknown ? '<span class="tag">variable</span>' : "") +
     (free ? '<span class="tag">free</span>' : "") +
     (noCache ? '<span class="tag">no cache</span>' : "");
-  const detail = c.unknown
-    ? `<div class="bd"><div class="bd-k">Variable pricing</div><div class="bd-v">—</div>
-       <div class="bd-sub">this is a router — you pay whatever the model it picks charges, so it can't be costed up front</div></div>`
-    : `${bd("Fresh input", c.cIn, c.total, `${f.format(usage.input)} tok × ${perM(c.inR)}/M`)}
-       ${bd("Output", c.cOut, c.total, `${f.format(usage.output)} tok × ${perM(c.outR)}/M`)}
-       ${bd("Cached reads", c.cCr, c.total, c.hasCache ? `${f.format(usage.cache_read)} tok × ${perM(c.crR)}/M` : "no native cache → billed as input")}
-       ${usage.cache_write > 0 ? bd("Cache writes", c.cCw, c.total, c.hasCache ? `${f.format(usage.cache_write)} tok × ${perM(c.cwR)}/M` : "no native cache → billed as input") : ""}
-       ${bdTotal(c.total)}`;
+  const cards =
+    `${bd("Fresh input", c.cIn, c.total, `${f.format(usage.input)} tok × ${perM(c.inR)}/M`)}
+     ${bd("Output", c.cOut, c.total, `${f.format(usage.output)} tok × ${perM(c.outR)}/M`)}
+     ${bd("Cached reads", c.cCr, c.total, c.hasCache ? `${f.format(usage.cache_read)} tok × ${perM(c.crR)}/M` : "no native cache → billed as input")}
+     ${usage.cache_write > 0 ? bd("Cache writes", c.cCw, c.total, c.hasCache ? `${f.format(usage.cache_write)} tok × ${perM(c.cwR)}/M` : "no native cache → billed as input") : ""}
+     ${bdTotal(c.total)}`;
   return `
     <tr class="row" data-id="${id}" tabindex="0" role="button" aria-expanded="${open}"
         aria-label="${esc(d.name)} — ${money(c.total)} per month; toggle cost breakdown">
@@ -419,8 +425,111 @@ function row(d, maxCost) {
       </td>
     </tr>
     <tr class="detail ${open ? "open" : ""}" data-detail="${id}">
-      <td colspan="6"><div class="detail-inner">${detail}</div></td>
+      <td colspan="6"><div class="detail-inner">
+        <div class="bd-grid">${cards}</div>
+        ${provPanel(id, open)}
+      </div></td>
     </tr>`;
+}
+
+/* ---- upstream providers -------------------------------------------------- */
+// OpenRouter routes each model to one of several upstream hosts, and they don't
+// charge the same — the catalog rate is just the default. Fetched per model, on
+// demand (opening a row), and cached for the session.
+const EP_CACHE = new Map();       // model id → { state, eps, msg }
+
+const epUrl = id => `${API}/${id.replace(/^~/, "")}/endpoints`;
+
+async function loadEndpoints(id) {
+  if (EP_CACHE.has(id)) return EP_CACHE.get(id);
+  const rec = { state: "loading", eps: [] };
+  EP_CACHE.set(id, rec);
+  try {
+    const r = await fetch(epUrl(id), { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    rec.eps = (j.data && j.data.endpoints) || [];
+    rec.state = rec.eps.length ? "ok" : "empty";
+  } catch (e) {
+    rec.state = "err";
+    rec.msg = e && e.message ? e.message : "request failed";
+  }
+  return rec;
+}
+
+function pct(v) { return v == null ? "—" : v.toFixed(2) + "%"; }
+
+function epRows(eps) {
+  return eps
+    .map(e => ({ e, c: cost({ pricing: e.pricing }, usage) }))
+    .sort((a, b) => numCmp(a.c.total, b.c.total, false) ||
+                    String(a.e.provider_name).localeCompare(String(b.e.provider_name)));
+}
+
+function epMarkup(id) {
+  const rec = EP_CACHE.get(id);
+  if (!rec || rec.state === "loading") return `<div class="prov-msg">Loading upstream providers…</div>`;
+  if (rec.state === "err")   return `<div class="prov-msg err">Couldn't load providers — ${esc(rec.msg)}.</div>`;
+  if (rec.state === "empty") return `<div class="prov-msg">No upstream provider breakdown published for this model.</div>`;
+
+  const rows = epRows(rec.eps);
+  const cheapest = rows.length ? rows[0].c.total : NaN;
+  // these are null across the public API today — only show the columns if real
+  const speed = rec.eps.some(e => e.latency_last_30m != null || e.throughput_last_30m != null);
+
+  const body = rows.map(({ e, c }) => {
+    const best = isFinite(c.total) && c.total === cheapest;
+    const disc = e.pricing && e.pricing.discount > 0
+      ? `<span class="prov-off">${Math.round(e.pricing.discount * 100)}% off</span>` : "";
+    const quant = e.quantization && e.quantization !== "unknown" ? e.quantization : "";
+    return `
+      <tr class="${best ? "prov-best" : ""}">
+        <td class="prov-nm">${esc(e.provider_name || e.name || "—")}${
+          quant ? `<span class="tag">${esc(quant)}</span>` : ""}${disc}${
+          best && rows.length > 1 ? `<span class="tag tag-best">cheapest</span>` : ""}</td>
+        <td class="prov-ctx">${ctxFmt(e.context_length)}</td>
+        <td class="num">${perM(c.inR)}</td>
+        <td class="num">${perM(c.outR)}</td>
+        <td class="num ${c.hasCache ? "" : "faint"}">${c.hasCache ? perM(c.crR) : "—"}</td>
+        ${speed ? `<td class="num faint">${e.latency_last_30m != null ? e.latency_last_30m.toFixed(2) + "s" : "—"}</td>
+        <td class="num faint">${e.throughput_last_30m != null ? Math.round(e.throughput_last_30m) + " tps" : "—"}</td>` : ""}
+        <td class="num faint">${pct(e.uptime_last_30m)}</td>
+        <td class="num prov-cost">${money(c.total)}</td>
+      </tr>`;
+  }).join("");
+
+  return `
+    <div class="prov-scroll">
+      <table class="prov-table">
+        <thead><tr>
+          <th>Provider</th><th>Context</th><th class="num">Input <small>$/M</small></th>
+          <th class="num">Output <small>$/M</small></th><th class="num">Cache read <small>$/M</small></th>
+          ${speed ? `<th class="num">Latency</th><th class="num">Throughput</th>` : ""}
+          <th class="num">Uptime <small>30m</small></th><th class="num">Your cost</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+// patch just the open row's panel — a full render() would collapse it
+function paintEndpoints(id) {
+  const host = $(`.prov-body[data-ep="${CSS.escape(id)}"]`);
+  if (host) host.innerHTML = epMarkup(id);
+}
+
+// Body is only filled for the open row — closed rows keep an empty shell so the
+// panel doesn't cost anything across the other ~370 rows.
+function provPanel(id, open) {
+  const rec = EP_CACHE.get(id);
+  const n = open && rec && rec.state === "ok" ? rec.eps.length : 0;
+  return `
+    <div class="prov-panel">
+      <div class="prov-head">Upstream providers${n ? ` <span class="prov-n">${n}</span>` : ""}
+        <span class="prov-note">who OpenRouter can route this model to — priced against your usage, cheapest first</span>
+      </div>
+      <div class="prov-body" data-ep="${esc(id)}">${open ? epMarkup(id) : ""}</div>
+    </div>`;
 }
 
 function bd(k, v, total, sub) {
@@ -607,6 +716,10 @@ function bindControls() {
     $$("#rows tr.detail.open").forEach(x => { if (x !== det) x.classList.remove("open"); });
     if (det) det.classList.toggle("open", openId === id);
     tr.setAttribute("aria-expanded", String(openId === id));
+    if (openId !== id) return;
+    // opening: show the placeholder now, fill in when the provider list lands
+    paintEndpoints(id);
+    loadEndpoints(id).then(() => { if (openId === id) paintEndpoints(id); });
   };
   $("#rows").addEventListener("click", e => {
     const tr = e.target.closest("tr.row"); if (tr) toggleRow(tr);

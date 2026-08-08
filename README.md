@@ -24,6 +24,12 @@ every model.**
   Image- and audio-output models are intentionally excluded, as are `:free`
   tiers — their $0 sticker isn't a real price and just crowds out the top of
   every cheapest-first sort.
+- **Upstream providers per model.** Expand any row to see every provider
+  OpenRouter can route that model to — GLM 5.2 has 32 of them — each with its
+  own input/output/cache rates, quantization, context, uptime and discount, and
+  **your monthly cost on that specific provider**, cheapest first. The catalog
+  rate is only the default; the spread between hosts is often 5–10×. Fetched on
+  demand when you open a row, then cached.
 - **Featured podium.** Three pinned frontier models costed against your usage,
   with the cheapest of the three highlighted.
 - **Filter & sort.** Filter by provider (chips are built from the live data —
@@ -48,10 +54,12 @@ every model.**
 - Cached-read figures assume native prompt caching **where the model supports
   it**; for models without caching, re-sent context (and any "cache write"
   tokens) is billed as fresh input.
-- **Router models can't be costed.** OpenRouter reports `-1` for models like
-  `openrouter/fusion` — the price depends on whichever model the request is
-  routed to. Those rows are tagged `variable`, show `—` instead of a figure,
-  and always sort last rather than pretending to be free.
+- **Meta-routers are excluded.** OpenRouter reports `-1` for `openrouter/auto`,
+  `/fusion`, `/pareto-code` and `/bodybuilder` because you pay whatever the
+  model they pick charges. There is no price to show, so they're dropped from
+  the catalog entirely.
+- **Per-model rates are the default route.** The headline row shows OpenRouter's
+  catalog price; expand it for the real per-provider spread.
 - Your usage figures stay entirely in your browser — nothing is sent anywhere.
 
 ## Project layout
