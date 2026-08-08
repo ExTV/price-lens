@@ -328,7 +328,7 @@ function renderChips(all) {
   const chip = it => {
     const on = filterProv === it.key;
     return `
-    <button type="button" class="chip ${on ? "active" : ""}" data-prov="${esc(it.key)}" role="tab" aria-selected="${on}">
+    <button type="button" class="chip ${on ? "active" : ""}" data-prov="${esc(it.key)}" aria-pressed="${on}">
       <span class="dot" style="--c:${esc(it.color)}"></span>${esc(it.label)}<span class="cnt">${it.n}</span>
     </button>`;
   };
@@ -386,7 +386,10 @@ function renderFeatured(items) {
 
 let podiumAnimated = false;
 
+const REDUCED = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+
 function countUp(el, target) {
+  if (REDUCED && REDUCED.matches) { el.innerHTML = money(target) + "<small>/mo</small>"; return; }
   const dur = 650, t0 = performance.now();
   const small = "<small>/mo</small>";
   (function frame(t) {
@@ -417,7 +420,7 @@ function row(d, maxCost) {
      ${usage.cache_write > 0 ? bd("Cache writes", c.cCw, c.total, c.hasCache ? `${f.format(usage.cache_write)} tok × ${perM(c.cwR)}/M` : "no native cache → billed as input") : ""}
      ${bdTotal(c.total)}`;
   return `
-    <tr class="row" data-id="${id}" tabindex="0" role="button" aria-expanded="${open}"
+    <tr class="row" data-id="${id}" tabindex="0" aria-expanded="${open}"
         aria-label="${esc(d.name)} — ${money(c.total)} per month; toggle cost breakdown">
       <td>
         <div class="m-name">
@@ -475,8 +478,13 @@ async function loadEndpoints(id) {
   return rec;
 }
 
-// numbers from the API are not necessarily numbers
-function num(v) { const n = Number(v); return isFinite(n) ? n : null; }
+// Numbers from the API are not necessarily numbers. Null/absent must stay null:
+// Number(null) and Number("") are both 0, which would read as a real measurement.
+function num(v) {
+  if (v == null || v === "" || typeof v === "boolean") return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
 function pct(v) { const n = num(v); return n == null ? "—" : n.toFixed(2) + "%"; }
 
 function epRows(eps) {

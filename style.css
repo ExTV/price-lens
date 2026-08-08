@@ -13,7 +13,7 @@
 
   --text:        #ece6da;
   --dim:         #a39c8f;
-  --faint:       #6f685d;
+  --faint:       #868073;   /* AA against --bg and --bg-2 at body sizes (5.0:1) */
 
   --gold:        #f0c75e;
   --gold-bright: #ffdc86;
@@ -389,6 +389,9 @@ tbody tr.row {
 }
 tbody tr.row:last-child { border-bottom: none; }
 tbody tr.row:hover { background: var(--surface-2); }
+/* Chromium won't reliably paint an outline on a table row, so draw the focus
+   ring with an inset shadow instead — keyboard users need to see where they are. */
+tbody tr.row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--gold); background: var(--surface-2); }
 tbody td { padding: 13px 16px; vertical-align: middle; }
 
 .m-name { display: flex; align-items: center; gap: 11px; }
@@ -428,7 +431,7 @@ tr.detail td { padding: 0 16px; background: var(--bg-2); }
 }
 .bd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 /* generous cap: cards wrap on narrow screens and the provider list sits below */
-tr.detail.open .detail-inner { max-height: 900px; opacity: 1; padding: 14px 0 16px; }
+tr.detail.open .detail-inner { max-height: 620px; opacity: 1; padding: 14px 0 16px; }
 
 /* upstream provider table */
 .prov-panel { border-top: 1px solid var(--border); padding-top: 12px; }
@@ -488,8 +491,10 @@ tr.detail.open .detail-inner { max-height: 900px; opacity: 1; padding: 14px 0 16
   .pod-row { grid-template-columns: 1fr; }
   .controls { flex-direction: column; align-items: stretch; }
   .controls-right { justify-content: space-between; }
-  table.grid thead th:nth-child(2),
-  tbody td.col-ctx { display: none; }
+  /* NB: must be child-scoped — a plain descendant selector also matches the
+     nested .prov-table's headers, desyncing them from their own data cells. */
+  #grid > thead > tr > th:nth-child(2),
+  #rows > tr > td.col-ctx { display: none; }
   .search input { width: 100%; }
   .search { flex: 1; }
 }
@@ -503,16 +508,16 @@ tr.detail.open .detail-inner { max-height: 900px; opacity: 1; padding: 14px 0 16
 
   /* Mobile table = Model · Input $/M · Your monthly cost.
      Context, Output and Cache columns are dropped so the cost figure is NEVER clipped. */
-  table.grid thead th:nth-child(4), tbody td.out-col,
-  table.grid thead th:nth-child(5), tbody td.cache-col { display: none; }
+  #grid > thead > tr > th:nth-child(4), #rows > tr > td.out-col,
+  #grid > thead > tr > th:nth-child(5), #rows > tr > td.cache-col { display: none; }
   .m-id { display: none; }
-  .tag { display: none; }                       /* names stay short on tiny screens */
-  table.grid thead th { white-space: normal; }  /* let "Your monthly cost" wrap */
-  tbody td, table.grid thead th { padding: 11px 10px; }
+  .m-title .tag { display: none; }                       /* names stay short on tiny screens */
+  #grid > thead > tr > th { white-space: normal; }  /* let "Your monthly cost" wrap */
+  #rows > tr > td, #grid > thead > tr > th { padding: 11px 10px; }
   .m-name { gap: 8px; }
   .m-title { font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; }
   td.num, .cost-val { font-size: 13px; }
-  th.num small { display: none; }
+  #grid > thead > tr > th.num small { display: none; }
   .cost-bar { right: 10px; }
   .field input { font-size: 16px; }             /* >=16px stops iOS zoom-on-focus */
   .pod-name { min-height: 0; }
@@ -521,4 +526,17 @@ tr.detail.open .detail-inner { max-height: 900px; opacity: 1; padding: 14px 0 16
 @media (max-width: 430px) {
   .usage-grid { grid-template-columns: 1fr; }
   .brand-sub { display: none; }
+}
+
+/* ---- reduced motion ------------------------------------------------------ */
+/* Honour the OS setting: kill the decorative reveal/pulse/spin/flash animations
+   and collapse transitions. countUp() checks the same query in app.js. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .hero, .usage, .podium, .controls, .table-wrap, .foot { animation: none; }
+  .status.live .status-dot { animation: none; }
+  .btn-refresh.spin .refresh-ico { animation: none; }
+  td.col-cost.flash .cost-val { animation: none; }
+  .detail-inner { transition: none; }
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

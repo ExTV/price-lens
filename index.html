@@ -8,7 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css?v=20260614a" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0a09'/%3E%3Ctext x='16' y='23' font-size='21' text-anchor='middle' fill='%23f0c75e'%3E%E2%97%A7%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="style.css?v=20260808a" />
 </head>
 <body>
 <div class="grain" aria-hidden="true"></div>
@@ -113,11 +114,11 @@
   <section class="podium" id="podium" aria-label="Cheapest models for your workload"></section>
 
   <section class="controls">
-    <div class="chips" id="chips" role="tablist"></div>
+    <div class="chips" id="chips" role="group" aria-label="Filter by provider"></div>
     <div class="controls-right">
       <div class="search">
         <span class="search-ico" aria-hidden="true">⌕</span>
-        <input type="text" id="search" placeholder="filter models…" autocomplete="off" />
+        <input type="text" id="search" placeholder="filter models…" autocomplete="off" aria-label="Filter models by name or id" />
       </div>
       <label class="sortwrap">
         <span>sort</span>
@@ -163,7 +164,7 @@
   </footer>
 </main>
 
-<script src="snapshot.js?v=20260614a"></script>
-<script src="app.js?v=20260614a"></script>
+<script src="snapshot.js?v=20260808a"></script>
+<script src="app.js?v=20260808a"></script>
 </body>
 </html>
