@@ -349,6 +349,10 @@ input[type="range"]#hitSlider {
 .chip.active { color: var(--bg); background: var(--text); border-color: var(--text); }
 .chip.active .cnt { color: rgba(11,10,9,0.55); }
 .chip.active .dot { box-shadow: 0 0 0 2px rgba(11,10,9,0.25); }
+.chip:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+/* long-tail providers toggle */
+.chip-more { background: transparent; border-style: dashed; color: var(--faint); }
+.chip-more:hover { color: var(--text); border-color: var(--dim); }
 
 .controls-right { display: flex; align-items: center; gap: 12px; }
 .search { position: relative; display: flex; align-items: center; }
@@ -417,10 +421,13 @@ td.col-cost.flash .cost-val { animation: flash .6s ease; }
 tr.detail td { padding: 0 16px; background: var(--bg-2); }
 .detail-inner {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;
-  padding: 14px 0 16px; max-height: 0; overflow: hidden; opacity: 0;
+  /* padding must collapse with the row — otherwise every closed breakdown still
+     reserves ~30px and the table grows a dead band between every model. */
+  padding: 0; max-height: 0; overflow: hidden; opacity: 0;
   transition: max-height .3s ease, opacity .25s, padding .3s;
 }
-tr.detail.open .detail-inner { max-height: 200px; opacity: 1; }
+/* generous cap so the cards can't be clipped when they wrap on narrow screens */
+tr.detail.open .detail-inner { max-height: 420px; opacity: 1; padding: 14px 0 16px; }
 .bd {
   border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; background: var(--surface);
 }

@@ -18,15 +18,18 @@ every model.**
 - **Costs your real workload.** Enter how many tokens you burn in a month
   (fresh input, output, cached reads, cache writes) and every model in the
   table is re-priced against *your* numbers — not a generic "$/M" sticker.
-- **All chat-completion models.** 300+ text→text models across every major
+- **All paid chat-completion models.** 300+ text→text models across every major
   lab — Anthropic, OpenAI, Google, Qwen, Mistral, Meta, DeepSeek, xAI, Cohere,
   Microsoft, NVIDIA, Z.AI, MoonshotAI, MiniMax, Amazon, Perplexity and more.
-  Image- and audio-output models are intentionally excluded.
+  Image- and audio-output models are intentionally excluded, as are `:free`
+  tiers — their $0 sticker isn't a real price and just crowds out the top of
+  every cheapest-first sort.
 - **Featured podium.** Three pinned frontier models costed against your usage,
   with the cheapest of the three highlighted.
-- **Filter & sort.** Filter by provider (chips are built from the live data),
-  search by name/id, and sort by your cost, input $/M, output $/M, context,
-  name, or provider.
+- **Filter & sort.** Filter by provider (chips are built from the live data —
+  the busiest dozen are shown, the rest sit behind a "+N more" toggle), search
+  by name/id, and sort by your cost, input $/M, output $/M, context, name, or
+  provider.
 - **Cache hit-rate modelling.** A slider (plus presets for heavy-agent / mixed
   / low / none) rebalances fresh vs. cached input so you can see how prompt
   caching changes the bill — only for models that actually support it.
@@ -43,7 +46,12 @@ every model.**
 - All rates are list rates and can vary by the provider OpenRouter routes you
   to.
 - Cached-read figures assume native prompt caching **where the model supports
-  it**; for models without caching, re-sent context is billed as fresh input.
+  it**; for models without caching, re-sent context (and any "cache write"
+  tokens) is billed as fresh input.
+- **Router models can't be costed.** OpenRouter reports `-1` for models like
+  `openrouter/fusion` — the price depends on whichever model the request is
+  routed to. Those rows are tagged `variable`, show `—` instead of a figure,
+  and always sort last rather than pretending to be free.
 - Your usage figures stay entirely in your browser — nothing is sent anywhere.
 
 ## Project layout
