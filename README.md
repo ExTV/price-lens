@@ -8,7 +8,8 @@ every model.**
 
 > **Live site: https://extv.github.io/price-lens/**
 >
-> It's a static page — no build step, no backend, nothing leaves your machine.
+> It's a static page — no build step, no backend, and your usage figures
+> never leave your machine.
 > You can also just open `index.html` in any browser.
 
 ---
@@ -18,15 +19,24 @@ every model.**
 - **Costs your real workload.** Enter how many tokens you burn in a month
   (fresh input, output, cached reads, cache writes) and every model in the
   table is re-priced against *your* numbers — not a generic "$/M" sticker.
-- **All chat-completion models.** 300+ text→text models across every major
+- **All paid chat-completion models.** 300+ text→text models across every major
   lab — Anthropic, OpenAI, Google, Qwen, Mistral, Meta, DeepSeek, xAI, Cohere,
   Microsoft, NVIDIA, Z.AI, MoonshotAI, MiniMax, Amazon, Perplexity and more.
-  Image- and audio-output models are intentionally excluded.
+  Image- and audio-output models are intentionally excluded, as are `:free`
+  tiers — their $0 sticker isn't a real price and just crowds out the top of
+  every cheapest-first sort.
+- **Upstream providers per model.** Expand any row to see every provider
+  OpenRouter can route that model to — GLM 5.2 has 32 of them — each with its
+  own input/output/cache rates, quantization, context, uptime and discount, and
+  **your monthly cost on that specific provider**, cheapest first. The catalog
+  rate is only the default; the spread between hosts is often 5–10×. Fetched on
+  demand when you open a row, then cached.
 - **Featured podium.** Three pinned frontier models costed against your usage,
   with the cheapest of the three highlighted.
-- **Filter & sort.** Filter by provider (chips are built from the live data),
-  search by name/id, and sort by your cost, input $/M, output $/M, context,
-  name, or provider.
+- **Filter & sort.** Filter by provider (chips are built from the live data —
+  the busiest dozen are shown, the rest sit behind a "+N more" toggle), search
+  by name/id, and sort by your cost, input $/M, output $/M, context, name, or
+  provider.
 - **Cache hit-rate modelling.** A slider (plus presets for heavy-agent / mixed
   / low / none) rebalances fresh vs. cached input so you can see how prompt
   caching changes the bill — only for models that actually support it.
@@ -43,8 +53,18 @@ every model.**
 - All rates are list rates and can vary by the provider OpenRouter routes you
   to.
 - Cached-read figures assume native prompt caching **where the model supports
-  it**; for models without caching, re-sent context is billed as fresh input.
-- Your usage figures stay entirely in your browser — nothing is sent anywhere.
+  it**; for models without caching, re-sent context (and any "cache write"
+  tokens) is billed as fresh input.
+- **Meta-routers are excluded.** OpenRouter reports `-1` for `openrouter/auto`,
+  `/fusion`, `/pareto-code` and `/bodybuilder` because you pay whatever the
+  model they pick charges. There is no price to show, so they're dropped from
+  the catalog entirely.
+- **Per-model rates are the default route.** The headline row shows OpenRouter's
+  catalog price; expand it for the real per-provider spread.
+- Your usage figures stay entirely in your browser — there is no backend and
+  nothing about your workload is uploaded. The page does call OpenRouter for the
+  catalog, and expanding a model fetches that model's per-provider pricing, so
+  OpenRouter sees which models you look at.
 
 ## Project layout
 
