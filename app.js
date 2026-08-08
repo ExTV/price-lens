@@ -132,11 +132,14 @@ function perM(rate) {            // rate is $/token → show $/million
   return "$" + v.toFixed(4);
 }
 
-function ctxFmt(n) {
-  if (!n) return "—";
+// Coerces rather than trusting: this value comes from the API and its result is
+// interpolated into innerHTML, so it must never be able to return raw markup.
+function ctxFmt(v) {
+  const n = Number(v);
+  if (!isFinite(n) || n <= 0) return "—";
   if (n >= 1e6) return (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M";
   if (n >= 1e3) return Math.round(n / 1e3) + "K";
-  return String(n);
+  return String(Math.round(n));
 }
 
 // token counts: accept "12,000,000", "12m", "500k", "1.2b"
@@ -243,6 +246,9 @@ async function load(isRefresh) {
     const data = pick(j.data || []);
     if (!data.length) throw new Error("empty");
     MODELS = data;
+    // Per-provider pricing is now stale too — keeping it would let an open row's
+    // breakdown contradict the headline price it sits under.
+    EP_CACHE.clear();
     const now = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
     setStatus("live", now);
     $("#footMeta").textContent = `${MODELS.length} models · live from openrouter.ai · ${new Date().toLocaleString()}`;
@@ -261,6 +267,11 @@ async function load(isRefresh) {
   } finally {
     if (isRefresh) setTimeout(() => btn.classList.remove("spin"), 500);
     render();
+    // an open row whose providers were just invalidated needs them re-fetched
+    if (openId && !EP_CACHE.has(openId)) {
+      const id = openId;
+      loadEndpoints(id).then(() => { if (openId === id) paintEndpoints(id); });
+    }
   }
 }
 
@@ -440,17 +451,22 @@ function row(d, maxCost) {
 // demand (opening a row), and cached for the session.
 const EP_CACHE = new Map();       // model id → { state, eps, msg }
 
-const epUrl = id => `${API}/${id.replace(/^~/, "")}/endpoints`;
+// The id comes from the API payload, so encode it — left raw, an id containing
+// "?" or "#" rewrites the request (the "/endpoints" suffix silently disappears
+// into a fragment and attacker-chosen query params ride along).
+const epUrl = id => `${API}/${id.replace(/^~/, "").split("/").map(encodeURIComponent).join("/")}/endpoints`;
 
 async function loadEndpoints(id) {
-  if (EP_CACHE.has(id)) return EP_CACHE.get(id);
+  const prev = EP_CACHE.get(id);
+  if (prev && prev.state !== "err") return prev;   // a failure is worth retrying, a result isn't
   const rec = { state: "loading", eps: [] };
   EP_CACHE.set(id, rec);
   try {
     const r = await fetch(epUrl(id), { headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const j = await r.json();
-    rec.eps = (j.data && j.data.endpoints) || [];
+    const eps = j && j.data && j.data.endpoints;
+    rec.eps = Array.isArray(eps) ? eps : [];
     rec.state = rec.eps.length ? "ok" : "empty";
   } catch (e) {
     rec.state = "err";
@@ -459,7 +475,9 @@ async function loadEndpoints(id) {
   return rec;
 }
 
-function pct(v) { return v == null ? "—" : v.toFixed(2) + "%"; }
+// numbers from the API are not necessarily numbers
+function num(v) { const n = Number(v); return isFinite(n) ? n : null; }
+function pct(v) { const n = num(v); return n == null ? "—" : n.toFixed(2) + "%"; }
 
 function epRows(eps) {
   return eps
@@ -477,12 +495,12 @@ function epMarkup(id) {
   const rows = epRows(rec.eps);
   const cheapest = rows.length ? rows[0].c.total : NaN;
   // these are null across the public API today — only show the columns if real
-  const speed = rec.eps.some(e => e.latency_last_30m != null || e.throughput_last_30m != null);
+  const speed = rec.eps.some(e => num(e.latency_last_30m) != null || num(e.throughput_last_30m) != null);
 
   const body = rows.map(({ e, c }) => {
     const best = isFinite(c.total) && c.total === cheapest;
-    const disc = e.pricing && e.pricing.discount > 0
-      ? `<span class="prov-off">${Math.round(e.pricing.discount * 100)}% off</span>` : "";
+    const dsc = num(e.pricing && e.pricing.discount);
+    const disc = dsc > 0 ? `<span class="prov-off">${Math.round(dsc * 100)}% off</span>` : "";
     const quant = e.quantization && e.quantization !== "unknown" ? e.quantization : "";
     return `
       <tr class="${best ? "prov-best" : ""}">
@@ -493,8 +511,8 @@ function epMarkup(id) {
         <td class="num">${perM(c.inR)}</td>
         <td class="num">${perM(c.outR)}</td>
         <td class="num ${c.hasCache ? "" : "faint"}">${c.hasCache ? perM(c.crR) : "—"}</td>
-        ${speed ? `<td class="num faint">${e.latency_last_30m != null ? e.latency_last_30m.toFixed(2) + "s" : "—"}</td>
-        <td class="num faint">${e.throughput_last_30m != null ? Math.round(e.throughput_last_30m) + " tps" : "—"}</td>` : ""}
+        ${speed ? `<td class="num faint">${num(e.latency_last_30m) != null ? num(e.latency_last_30m).toFixed(2) + "s" : "—"}</td>
+        <td class="num faint">${num(e.throughput_last_30m) != null ? Math.round(num(e.throughput_last_30m)) + " tps" : "—"}</td>` : ""}
         <td class="num faint">${pct(e.uptime_last_30m)}</td>
         <td class="num prov-cost">${money(c.total)}</td>
       </tr>`;
@@ -551,6 +569,9 @@ function render() {
   const paid = all.filter(d => isFinite(d.c.total) && d.c.total > 0).sort((a, b) => a.c.total - b.c.total);
 
   const list = applyFilterSort(all);
+  // Filtering the open row out of view must close it — otherwise it silently
+  // springs back open, already expanded, the moment the filter is cleared.
+  if (openId && !list.some(d => d.m.id === openId)) openId = null;
   const maxCost = list.reduce((m, d) => Math.max(m, isFinite(d.c.total) ? d.c.total : 0), 0);
 
   $("#rows").innerHTML = list.map(d => row(d, maxCost)).join("");
@@ -573,11 +594,13 @@ function render() {
 
 /* flash the cost cells after a usage edit (visual feedback that numbers moved) */
 function flashCosts() {
-  $$("#rows td.col-cost").forEach(td => {
-    td.classList.remove("flash");
-    void td.offsetWidth;
-    td.classList.add("flash");
-  });
+  // Every caller runs render() first, which replaces #rows wholesale — so these
+  // nodes are brand new and cannot already carry .flash. The old
+  // remove → read offsetWidth → add dance existed to restart the animation on a
+  // reused node, but interleaved a forced synchronous layout with a style write
+  // 367 times per call: ~1.3s per keystroke, 3.1s per slider tick. Adding the
+  // class on a fresh node starts the animation just the same, in ~1ms.
+  $$("#rows td.col-cost").forEach(td => td.classList.add("flash"));
 }
 
 /* ---- usage inputs -------------------------------------------------------- */

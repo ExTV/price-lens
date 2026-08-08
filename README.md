@@ -8,7 +8,8 @@ every model.**
 
 > **Live site: https://extv.github.io/price-lens/**
 >
-> It's a static page — no build step, no backend, nothing leaves your machine.
+> It's a static page — no build step, no backend, and your usage figures
+> never leave your machine.
 > You can also just open `index.html` in any browser.
 
 ---
@@ -60,7 +61,10 @@ every model.**
   the catalog entirely.
 - **Per-model rates are the default route.** The headline row shows OpenRouter's
   catalog price; expand it for the real per-provider spread.
-- Your usage figures stay entirely in your browser — nothing is sent anywhere.
+- Your usage figures stay entirely in your browser — there is no backend and
+  nothing about your workload is uploaded. The page does call OpenRouter for the
+  catalog, and expanding a model fetches that model's per-provider pricing, so
+  OpenRouter sees which models you look at.
 
 ## Project layout
 
