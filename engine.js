@@ -117,6 +117,18 @@
     return { minPromptTokens: Number(t.min_prompt_tokens), inR: rateOf(t.prompt), outR: rateOf(t.completion) };
   }
 
+  // Cost-bar width in px. Monthly costs span four orders of magnitude ($0.86 to
+  // $13,800 on the sample usage), so a linear bar collapsed 289 of 304 rows to
+  // the 2px minimum and read as a stray tick under every price. Log scale
+  // between the cheapest and priciest visible model instead, 6px floor so the
+  // cheapest still shows.
+  function costBarWidth(total, lo, hi) {
+    if (!isFinite(total) || total <= 0 || !isFinite(lo) || !isFinite(hi) || lo <= 0) return 0;
+    if (hi <= lo) return 44;
+    const t = Math.min(1, Math.max(0, (Math.log(total) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))));
+    return Math.round(6 + t * 82);
+  }
+
   /* ---- catalog rules ------------------------------------------------------- */
   const providerOf = id => String(id || "").replace(/^~/, "").split("/")[0];
 
@@ -211,7 +223,7 @@
 
   return {
     fmt, esc, money, perM, ctxFmt, parseNum,
-    rateOf, cost, tierOf,
+    rateOf, cost, tierOf, costBarWidth,
     providerOf, isTextModel, hasVision, isFreeTier, isRouter, isBatchVariant, isUncostable, pick,
     versionOf, cmpVersion,
     parseInsights

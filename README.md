@@ -35,8 +35,9 @@ every model.**
   demand when you open a row, then cached.
 - **Featured podium.** Three pinned frontier models — Claude Fable 5.1,
   GPT-5.6 Sol and Gemini 3.1 Pro — costed against your usage, with the
-  cheapest of the three highlighted. If a pinned id ever leaves the catalog,
-  the newest release of that family stands in under its own name.
+  cheapest of the three highlighted, and a bar showing where the money goes.
+  Click a card to jump to that model's row. If a pinned id ever leaves the
+  catalog, the newest release of that family stands in under its own name.
 - **Filter & sort.** Filter by provider (chips are built from the live data —
   the busiest dozen are shown, the rest sit behind a "+N more" toggle), search
   by name/id, and sort by your cost, input $/M, output $/M, context, name, or

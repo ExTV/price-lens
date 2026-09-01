@@ -9,7 +9,7 @@
 
 const {
   fmt, esc, money, perM, ctxFmt, parseNum,
-  cost, tierOf, providerOf, hasVision, pick, cmpVersion, parseInsights
+  cost, tierOf, costBarWidth, providerOf, hasVision, pick, cmpVersion, parseInsights
 } = window.PriceLens;
 
 const API = "https://openrouter.ai/api/v1/models";
@@ -33,49 +33,36 @@ const FEATURED = [
   { ids: ["google/gemini-3.1-pro-preview", "google/gemini-3.1-pro-preview-customtools"], rx: /^google\/gemini-[\d.]+-pro(-preview)?$/, label: "Gemini 3.1 Pro" }
 ];
 
-// Known providers → display label + chip colour. Any provider not listed here
-// still shows up (chips/sort are derived from the live data) with a fallback tint.
-const PROV = {
-  anthropic:    { label: "Anthropic",  color: "var(--anthropic)" },
-  openai:       { label: "OpenAI",     color: "var(--openai)" },
-  google:       { label: "Google",     color: "var(--google)" },
-  qwen:         { label: "Qwen",        color: "var(--qwen)" },
-  mistralai:    { label: "Mistral",    color: "#ff8205" },
-  "meta-llama": { label: "Meta",       color: "#4d8bf0" },
-  deepseek:     { label: "DeepSeek",   color: "#4d6bfe" },
-  "x-ai":       { label: "xAI",        color: "#9aa0a6" },
-  cohere:       { label: "Cohere",     color: "#ff7759" },
-  microsoft:    { label: "Microsoft",  color: "#5ea0ef" },
-  nvidia:       { label: "NVIDIA",     color: "#76b900" },
-  "z-ai":       { label: "Z.AI",       color: "#5b78ff" },
-  moonshotai:   { label: "MoonshotAI", color: "#19b3b3" },
-  minimax:      { label: "MiniMax",    color: "#ff5b6a" },
-  ai21:         { label: "AI21",       color: "#e35caa" },
-  amazon:       { label: "Amazon",     color: "#ff9b3d" },
-  nousresearch: { label: "Nous",       color: "#c0a3ff" },
-  perplexity:   { label: "Perplexity", color: "#20b8cd" },
-  liquid:       { label: "Liquid",     color: "#4fb0c6" },
-  inception:    { label: "Inception",  color: "#7bd1c0" },
-  reka:         { label: "Reka",       color: "#ff7a45" },
-  baidu:        { label: "Baidu",      color: "#5566ff" },
-  tencent:      { label: "Tencent",    color: "#3fb950" },
-  "01-ai":      { label: "01.AI",      color: "#2dd4bf" },
-  inflection:   { label: "Inflection", color: "#b08cff" },
-  allenai:      { label: "Ai2",        color: "#f0529c" },
-  "arcee-ai":   { label: "Arcee",      color: "#6bcf9b" },
-  stepfun:      { label: "StepFun",    color: "#7c83ff" },
-  thedrummer:   { label: "TheDrummer", color: "#d98c5f" },
-  sao10k:       { label: "Sao10K",     color: "#caa46a" },
-  agentica:     { label: "Agentica",   color: "#8bd17c" }
+// Display labels for providers whose id segment isn't a readable name. Anything
+// not listed shows its id segment as-is.
+const PROV_LABEL = {
+  anthropic: "Anthropic", openai: "OpenAI", google: "Google", qwen: "Qwen", mistralai: "Mistral",
+  "meta-llama": "Meta", meta: "Meta", deepseek: "DeepSeek", "x-ai": "xAI", cohere: "Cohere",
+  microsoft: "Microsoft", nvidia: "NVIDIA", "z-ai": "Z.AI", moonshotai: "MoonshotAI", minimax: "MiniMax",
+  ai21: "AI21", amazon: "Amazon", nousresearch: "Nous", perplexity: "Perplexity", liquid: "Liquid",
+  inception: "Inception", reka: "Reka", baidu: "Baidu", tencent: "Tencent", "01-ai": "01.AI",
+  inflection: "Inflection", allenai: "Ai2", "arcee-ai": "Arcee", stepfun: "StepFun", thedrummer: "TheDrummer",
+  sao10k: "Sao10K", agentica: "Agentica", "bytedance-seed": "ByteDance", inclusionai: "inclusionAI",
+  upstage: "Upstage", "ibm-granite": "IBM", sakana: "Sakana"
 };
 
-// stable fallback tint for providers we don't have a brand colour for
-const FALLBACK_COLORS = ["#9c8f7a", "#7f9cb0", "#b08f9c", "#8fb09c", "#a59cb0", "#b0a88f"];
+// Only the busiest labs get a hue. Thirty near-identical brand colours told
+// nobody anything at 9px (Google vs Microsoft was ΔE 2.9); these eight sit at
+// least ΔE 27 apart. Everyone else shares the neutral dot and the label
+// carries the identity.
+const PROV_HUE = {
+  openai:       "#2bcf8d",
+  qwen:         "#b197ff",
+  google:       "#6aa6f7",
+  anthropic:    "#e08a63",
+  mistralai:    "#f5b431",
+  deepseek:     "#4d6bfe",
+  "z-ai":       "#ff6b9d",
+  "meta-llama": "#38c8d4",
+  meta:         "#38c8d4"
+};
 function provMeta(prov) {
-  if (PROV[prov]) return PROV[prov];
-  let h = 0;
-  for (let i = 0; i < prov.length; i++) h = (h * 31 + prov.charCodeAt(i)) >>> 0;
-  return { label: prov, color: FALLBACK_COLORS[h % FALLBACK_COLORS.length] };
+  return { label: PROV_LABEL[prov] || prov, color: PROV_HUE[prov] || "var(--dot)" };
 }
 
 /* ---- state --------------------------------------------------------------- */
@@ -115,7 +102,7 @@ function cleanName(m) {
   if (i > 0) {
     const head = n.slice(0, i).toLowerCase();
     const own = provMeta(providerOf(m.id)).label.toLowerCase();
-    if (head === own || Object.values(PROV).some(p => p.label.toLowerCase() === head)) return n.slice(i + 2);
+    if (head === own || Object.values(PROV_LABEL).some(l => l.toLowerCase() === head)) return n.slice(i + 2);
   }
   return n;
 }
@@ -277,17 +264,27 @@ function renderFeatured(items) {
         <h3 class="pod-name">${esc(i.label)}</h3>
         <div class="pod-cost">—<small>not in catalog</small></div>
       </div>`;
-    const d = i.d, known = isFinite(d.c.total);
-    const best = known && d.c.total === min && costs.length > 1;
+    const d = i.d, c = d.c, known = isFinite(c.total);
+    const best = known && c.total === min && costs.length > 1;
     const figure = known
-      ? `<div class="pod-cost" data-target="${d.c.total}">$0<small>/mo</small></div>`
+      ? `<div class="pod-cost" data-target="${c.total}">$0<small>/mo</small></div>`
       : `<div class="pod-cost">—<small>variable pricing</small></div>`;
+    // where the money goes — same four tones as the usage-field markers
+    const parts = [["fresh in", c.cIn], ["out", c.cOut], ["cached", c.cCr]];
+    if (usage.cache_write > 0) parts.push(["writes", c.cCw]);
+    const split = known && c.total > 0 ? `
+        <div class="pod-bar" aria-hidden="true">${parts.map((p, k) =>
+          `<i class="tone-${k + 1}" style="width:${(p[1] / c.total * 100).toFixed(1)}%"></i>`).join("")}</div>
+        <div class="pod-split">${parts.map((p, k) =>
+          `<span><b class="tone-${k + 1}"></b>${p[0]} ${money(p[1])}</span>`).join("")}</div>` : "";
+    // the card is a shortcut to its row (see openFromPodium)
     return `
-      <div class="pod ${best ? "pod-1" : ""}">
-        <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? " · cheapest of 3" : ""}</div>
+      <div class="pod ${best ? "pod-1" : ""}" data-id="${esc(d.m.id)}" role="button" tabindex="0"
+           aria-label="${esc(i.label)}: ${money(c.total)} per month. Open its row in the table">
+        <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? `<span class="pod-flag">cheapest of 3</span>` : ""}</div>
         <div class="pod-prov"><span class="m-dot" style="--c:${esc(d.meta.color)};width:8px;height:8px"></span>${esc(d.meta.label)}</div>
         <h3 class="pod-name">${esc(i.label)}<span class="pod-id">${esc(d.m.id)}</span></h3>
-        ${figure}
+        ${figure}${split}
       </div>`;
   }).join("");
   $("#podium").innerHTML =
@@ -320,19 +317,17 @@ function countUp(el, target) {
   })(t0);
 }
 
-function row(d, maxCost) {
+function row(d, scale) {
   const c = d.c;
-  const w = maxCost > 0 && isFinite(c.total) ? Math.max(2, (c.total / maxCost) * 88) : 0;
+  const w = costBarWidth(c.total, scale.lo, scale.hi);
   const free = c.total === 0;
-  const noCache = !c.unknown && !c.hasCache && usage.cache_read > 0;
   const tier = tierOf(d.m);
   const id = esc(d.m.id), open = openId === d.m.id;
   const tags =
     (hasVision(d.m) ? '<span class="tag">vision</span>' : "") +
     (tier ? `<span class="tag" title="${esc(tierNote(tier))}">tiered</span>` : "") +
     (c.unknown ? '<span class="tag">variable</span>' : "") +
-    (free ? '<span class="tag">free</span>' : "") +
-    (noCache ? '<span class="tag">no cache</span>' : "");
+    (free ? '<span class="tag">free</span>' : "");   // "no cache" is already the dash in the cache column
   // The breakdown is only built for the open row. Building it for every closed
   // row too was 57% of the HTML and 59% of the DOM on each render.
   return `
@@ -344,6 +339,7 @@ function row(d, maxCost) {
           <div>
             <div class="m-title">${esc(d.name)}${tags}</div>
             <div class="m-id">${id}</div>
+            <div class="m-prov">${esc(d.meta.label)}</div>
           </div>
         </div>
       </td>
@@ -508,9 +504,12 @@ function render() {
   // Filtering the open row out of view must close it — otherwise it silently
   // springs back open, already expanded, the moment the filter is cleared.
   if (openId && !list.some(d => d.m.id === openId)) openId = null;
-  const maxCost = list.reduce((m, d) => Math.max(m, isFinite(d.c.total) ? d.c.total : 0), 0);
+  // cost-bar scale over the visible list — log between the extremes, see costBarWidth()
+  let lo = Infinity, hi = 0;
+  for (const d of list) if (isFinite(d.c.total) && d.c.total > 0) { lo = Math.min(lo, d.c.total); hi = Math.max(hi, d.c.total); }
+  const scale = { lo, hi };
 
-  $("#rows").innerHTML = list.map(d => row(d, maxCost)).join("");
+  $("#rows").innerHTML = list.map(d => row(d, scale)).join("");
   $("#empty").hidden = list.length > 0;
 
   // update usage summary line
@@ -679,6 +678,46 @@ function bindControls() {
   });
   $("#sort").addEventListener("change", e => { sortMode = e.target.value; render(); });
   $("#refreshBtn").addEventListener("click", () => load(true));
+
+  // featured card → its row: clear the filters so it is in the list, open it, scroll to it
+  const openFromPodium = id => {
+    filterProv = "all"; query = ""; $("#search").value = "";
+    openId = id;
+    render();
+    const tr = $(`#rows tr.row[data-id="${CSS.escape(id)}"]`);
+    if (tr) {
+      tr.scrollIntoView({ block: "center", behavior: REDUCED && REDUCED.matches ? "auto" : "smooth" });
+      tr.focus({ preventScroll: true });
+    }
+    loadEndpoints(id).then(() => { if (openId === id) paintEndpoints(id); });
+  };
+  $("#podium").addEventListener("click", e => {
+    const pod = e.target.closest(".pod[data-id]"); if (pod) openFromPodium(pod.dataset.id);
+  });
+  $("#podium").addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const pod = e.target.closest(".pod[data-id]"); if (!pod) return;
+    e.preventDefault(); openFromPodium(pod.dataset.id);
+  });
+
+  // Sticky filter bar: once it is pinned to the top, collapse the chips to one
+  // scrolling row (.controls.stuck) instead of holding ~150px of viewport.
+  // Checked on scroll rather than with an IntersectionObserver sentinel: a
+  // zero-height sentinel never fires when the page jumps past it (End key,
+  // scrollbar drag, restored scroll position). Pinned means top === 0; on
+  // phones the bar is static, so it is never "stuck".
+  const controls = $(".controls");
+  let stuckTick = false;
+  const syncStuck = () => {
+    stuckTick = false;
+    const pinned = getComputedStyle(controls).position === "sticky" && controls.getBoundingClientRect().top <= 0;
+    controls.classList.toggle("stuck", pinned);
+  };
+  const queueStuck = () => { if (!stuckTick) { stuckTick = true; requestAnimationFrame(syncStuck); } };
+  addEventListener("scroll", queueStuck, { passive: true });
+  addEventListener("resize", queueStuck);
+  controls.addEventListener("animationend", queueStuck);   // the reveal transform offsets the bar until it ends
+  syncStuck();
 
   // expand/collapse breakdown rows (mouse + keyboard)
   const toggleRow = tr => {
