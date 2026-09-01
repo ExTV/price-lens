@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; connect-src https://openrouter.ai; base-uri 'none'; form-action 'none'" />
 <title>Price Lens — what your tokens actually cost</title>
 <meta name="description" content="Live OpenRouter pricing for 300+ chat-completion models across every major lab, with your real monthly usage costed against every model." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0a09'/%3E%3Ctext x='16' y='23' font-size='21' text-anchor='middle' fill='%23f0c75e'%3E%E2%97%A7%3C/text%3E%3C/svg%3E" />
-<link rel="stylesheet" href="style.css?v=20260808a" />
+<link rel="stylesheet" href="style.css?v=20260901a" />
 </head>
 <body>
 <div class="grain" aria-hidden="true"></div>
@@ -23,7 +24,7 @@
     <span class="brand-sub">openrouter pricing, de-confused</span>
   </div>
   <div class="topbar-right">
-    <div class="status" id="status" title="Data source">
+    <div class="status" id="status" title="Data source" aria-live="polite">
       <span class="status-dot" id="statusDot"></span>
       <span class="status-text" id="statusText">loading…</span>
     </div>
@@ -46,12 +47,12 @@
     <div class="usage-head">
       <h2>Your monthly usage</h2>
       <div class="usage-actions">
-        <button class="btn-reset" id="pasteToggle" title="Paste your Hermes Insights block to auto-fill">⎘ Load from Hermes Insights</button>
+        <button class="btn-reset" id="pasteToggle" title="Paste your Hermes Insights block to auto-fill" aria-expanded="false" aria-controls="pasteBox">⎘ Load from Hermes Insights</button>
         <button class="btn-reset" id="resetBtn" title="Restore the sample figures">⤺ Reset</button>
       </div>
     </div>
     <div class="paste-box" id="pasteBox" hidden>
-      <textarea id="pasteArea" spellcheck="false"
+      <textarea id="pasteArea" spellcheck="false" aria-label="Hermes Insights text"
         placeholder="Paste your Hermes Insights output here.&#10;The line it reads is:  Tokens: 331,234,491 (in: 56,828,463 / out: 1,669,359)&#10;→ in = fresh input · out = output · (total − in − out) = cached reads."></textarea>
       <div class="paste-row">
         <span class="paste-msg" id="pasteMsg"></span>
@@ -97,12 +98,12 @@
     <div class="period" id="periodRow">
       <span class="period-lbl">Monthly basis</span>
       <span class="period-seg">data spans
-        <input type="text" inputmode="decimal" id="p_data" class="period-in" />
+        <input type="text" inputmode="decimal" id="p_data" class="period-in" aria-label="Days your data covers" />
         <span class="period-unit">days</span>
       </span>
       <span class="period-arrow">→</span>
       <span class="period-seg">bill over
-        <input type="text" inputmode="decimal" id="p_proj" class="period-in" />
+        <input type="text" inputmode="decimal" id="p_proj" class="period-in" aria-label="Days to bill over" />
         <span class="period-unit">days</span>
       </span>
       <span class="period-mult" id="periodMult">×1</span>
@@ -139,12 +140,12 @@
     <table class="grid" id="grid">
       <thead>
         <tr>
-          <th class="col-model">Model</th>
-          <th class="col-ctx">Context</th>
-          <th class="num">Input <small>$/M</small></th>
-          <th class="num">Output <small>$/M</small></th>
-          <th class="num">Cache&nbsp;read <small>$/M</small></th>
-          <th class="num col-cost">Your monthly cost</th>
+          <th scope="col" class="col-model">Model</th>
+          <th scope="col" class="col-ctx">Context</th>
+          <th scope="col" class="num">Input <small>$/M</small></th>
+          <th scope="col" class="num">Output <small>$/M</small></th>
+          <th scope="col" class="num">Cache&nbsp;read <small>$/M</small></th>
+          <th scope="col" class="num col-cost">Your monthly cost</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -164,7 +165,8 @@
   </footer>
 </main>
 
-<script src="snapshot.js?v=20260808a"></script>
-<script src="app.js?v=20260808a"></script>
+<script src="engine.js?v=20260901a"></script>
+<script src="snapshot.js?v=20260901a"></script>
+<script src="app.js?v=20260901a"></script>
 </body>
 </html>

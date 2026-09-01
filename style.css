@@ -428,6 +428,13 @@ tr.detail td { padding: 0 16px; background: var(--bg-2); }
      reserves ~30px and the table grows a dead band between every model. */
   padding: 0; max-height: 0; overflow: hidden; opacity: 0;
   transition: max-height .3s ease, opacity .25s, padding .3s;
+  /* The provider table inside is nowrap and wider than a phone. Without this
+     its min-content width leaks up through the colspan cell and forces the
+     whole grid to ~900px, pushing the cost column off-screen for every row —
+     and the wrapper's overflow:hidden means it can't even be scrolled to.
+     Containment makes the detail cell contribute no intrinsic width, so
+     .prov-scroll scrolls horizontally on its own as intended. */
+  contain: inline-size;
 }
 .bd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 /* generous cap: cards wrap on narrow screens and the provider list sits below */
@@ -476,6 +483,11 @@ tr.detail.open .detail-inner { max-height: 620px; opacity: 1; padding: 14px 0 16
 .bd-v { font-family: var(--mono); font-size: 14px; font-weight: 500; }
 .bd-sub { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 2px; }
 .bd.total .bd-v { color: var(--gold-bright); }
+/* long-context pricing tier the monthly figure can't model */
+.tier-note {
+  font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--gold);
+  border: 1px dashed rgba(240,199,94,0.35); border-radius: var(--r-sm); padding: 8px 12px;
+}
 
 .empty { text-align: center; color: var(--faint); font-family: var(--mono); font-size: 13px; padding: 40px; }
 
