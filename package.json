@@ -1,0 +1,14 @@
+{
+  "name": "price-lens",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenRouter pricing, de-confused — your real monthly usage costed on every chat-completion model.",
+  "homepage": "https://extv.github.io/price-lens/",
+  "scripts": {
+    "test": "node --test",
+    "snapshot": "node tools/build-snapshot.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

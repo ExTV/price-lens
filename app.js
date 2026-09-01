@@ -1,11 +1,19 @@
 /* =========================================================================
    Price Lens — app logic
    Live OpenRouter pricing → cost your real monthly usage on every model.
+   Pure pricing/catalog rules live in engine.js (shared with the snapshot
+   builder and the tests); this file is state, fetch and rendering.
    ========================================================================= */
 
 "use strict";
 
+const {
+  fmt, esc, money, perM, ctxFmt, parseNum,
+  cost, tierOf, providerOf, hasVision, pick, cmpVersion, parseInsights
+} = window.PriceLens;
+
 const API = "https://openrouter.ai/api/v1/models";
+const REFRESH_MS = 10 * 60 * 1000;
 
 // Generic sample workload so the page is alive on first load.
 // Replace via the field inputs or by pasting your own Hermes Insights block.
@@ -16,11 +24,13 @@ const DEFAULTS = {
   cache_write: 0
 };
 
-// Always-shown hero trio. Matched by exact id first, then a loose fallback.
+// Always-shown hero trio. Matched by exact id (in priority order); if none of
+// those is in the catalog any more, the newest release matching `rx` stands in
+// and is shown under its own name.
 const FEATURED = [
-  { ids: ["anthropic/claude-fable-5", "~anthropic/claude-fable-latest"], rx: /claude-fable/,             label: "Fable" },
-  { ids: ["openai/gpt-5.5"],                                             rx: /^~?openai\/gpt-5\.5$/,      label: "GPT-5.5" },
-  { ids: ["google/gemini-3.1-pro-preview-customtools"],                 rx: /gemini-3\.1-pro.*customtool/, label: "Gemini 3.1 Pro" }
+  { ids: ["anthropic/claude-fable-5.1"],                                              rx: /^anthropic\/claude-fable-[\d.]+$/,       label: "Fable 5.1" },
+  { ids: ["openai/gpt-5.6-sol"],                                                      rx: /^openai\/gpt-[\d.]+-sol$/,               label: "GPT-5.6 Sol" },
+  { ids: ["google/gemini-3.1-pro-preview", "google/gemini-3.1-pro-preview-customtools"], rx: /^google\/gemini-[\d.]+-pro(-preview)?$/, label: "Gemini 3.1 Pro" }
 ];
 
 // Known providers → display label + chip colour. Any provider not listed here
@@ -70,6 +80,9 @@ function provMeta(prov) {
 
 /* ---- state --------------------------------------------------------------- */
 let MODELS = [];                       // raw {id,name,context_length,pricing}
+let LAST   = new Map();                // id → decorated row from the last render()
+let source = null;                     // "live" | "snap" — what MODELS currently holds
+let lastLiveAt = 0;                    // ms timestamp of the last successful live fetch
 let base   = { ...DEFAULTS };          // token counts exactly as reported (per data window)
 let period = { dataDays: 30, projectDays: 30 };  // reported window  →  projection target
 let usage  = { ...DEFAULTS };          // base scaled to the projection window — what we actually cost
@@ -94,99 +107,22 @@ function recalcUsage() {
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const providerOf = id => id.replace(/^~/, "").split("/")[0];
-
+// "Anthropic: Claude Opus 5" → "Claude Opus 5" when the prefix is the model's own
+// provider (or any provider we know), so unknown labs get the same treatment.
 function cleanName(m) {
   const n = m.name || m.id;
   const i = n.indexOf(": ");
   if (i > 0) {
     const head = n.slice(0, i).toLowerCase();
-    if (Object.values(PROV).some(p => p.label.toLowerCase() === head)) return n.slice(i + 2);
+    const own = provMeta(providerOf(m.id)).label.toLowerCase();
+    if (head === own || Object.values(PROV).some(p => p.label.toLowerCase() === head)) return n.slice(i + 2);
   }
   return n;
 }
 
-const f = new Intl.NumberFormat("en-US");
-
-// everything from the API lands in innerHTML — never trust it raw
-const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, ch => ESC[ch]);
-
-function money(n) {
-  if (!isFinite(n)) return "—";          // unknown / variable pricing
-  if (n === 0) return "$0";
-  if (n >= 1000)     return "$" + f.format(Math.round(n));
-  if (n >= 1)        return "$" + n.toFixed(2);
-  if (n >= 0.01)     return "$" + n.toFixed(3);
-  if (n >= 0.000001) return "$" + n.toFixed(6).replace(/0+$/, "");
-  return "≈$0";                          // never exponent notation in a price column
-}
-
-function perM(rate) {            // rate is $/token → show $/million
-  if (!isFinite(rate)) return "—";
-  const v = rate * 1e6;
-  if (v === 0)     return "$0";
-  if (v >= 100)    return "$" + v.toFixed(0);
-  if (v >= 1)      return "$" + v.toFixed(2);
-  if (v >= 0.001)  return "$" + v.toFixed(3);
-  return "$" + v.toFixed(4);
-}
-
-// Coerces rather than trusting: this value comes from the API and its result is
-// interpolated into innerHTML, so it must never be able to return raw markup.
-function ctxFmt(v) {
-  const n = Number(v);
-  if (!isFinite(n) || n <= 0) return "—";
-  if (n >= 1e6) return (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M";
-  if (n >= 1e3) return Math.round(n / 1e3) + "K";
-  return String(Math.round(n));
-}
-
-// token counts: accept "12,000,000", "12m", "500k", "1.2b"
-const SUFFIX = { k: 1e3, m: 1e6, b: 1e9 };
-function parseNum(s) {
-  const raw = String(s).trim().toLowerCase();
-  const mult = SUFFIX[raw.slice(-1)] || 1;
-  const n = parseFloat((mult > 1 ? raw.slice(0, -1) : raw).replace(/[^0-9.]/g, ""));
-  return isFinite(n) && n >= 0 ? n * mult : 0;
-}
-
-/* ---- cost engine --------------------------------------------------------- */
-// OpenRouter reports "-1" for router models whose price depends on where the
-// request lands (openrouter/auto, fusion, …). That is *unknown*, not negative —
-// treat it (and anything unparseable) as NaN so it can never be costed or sorted
-// as if it were cheap.
-function rateOf(v) {
-  const n = parseFloat(v);
-  return isFinite(n) && n >= 0 ? n : NaN;
-}
-
-function cost(m, u) {
-  const p = m.pricing || {};
-  const inR  = rateOf(p.prompt);
-  const outR = rateOf(p.completion);
-  const unknown = !isFinite(inR) || !isFinite(outR);
-
-  const crRaw = rateOf(p.input_cache_read);
-  // Models without caching omit the field entirely (→ NaN). A published rate of
-  // exactly 0 means reads are free, not unsupported — don't bill those as input.
-  const hasCache = isFinite(crRaw);
-  const crR = hasCache ? crRaw : inR;             // no native caching → reads cost full input rate
-
-  const cwRaw = rateOf(p.input_cache_write);
-  // no cache support → "cache writes" are just fresh input, not free
-  const cwR = isFinite(cwRaw) ? cwRaw : (hasCache ? 0 : inR);
-
-  const cIn = u.input * inR;
-  const cOut = u.output * outR;
-  const cCr = u.cache_read * crR;
-  const cCw = u.cache_write * cwR;
-
-  return {
-    inR, outR, crR, cwR, hasCache, unknown,
-    cIn, cOut, cCr, cCw,
-    total: unknown ? NaN : cIn + cOut + cCr + cCw
-  };
+function tierNote(t) {
+  return `Long-context tier: above ${ctxFmt(t.minPromptTokens)} prompt tokens OpenRouter bills ` +
+         `${perM(t.inR)}/M in · ${perM(t.outR)}/M out. Not modelled — this cost uses the base rate.`;
 }
 
 function decorate() {
@@ -205,47 +141,25 @@ function setStatus(kind, label) {
   else                      { el.classList.add("err");  t.textContent = label; }
 }
 
-// keep only true text→text LLMs (drop image-gen / audio / other media models)
-function isTextModel(m) {
-  const o = m.architecture && m.architecture.output_modalities;
-  return Array.isArray(o) ? (o.length === 1 && o[0] === "text") : true;
-}
-function hasVision(m) {
-  const i = m.architecture && m.architecture.input_modalities;
-  return Array.isArray(i) && i.includes("image");
-}
-// Free variants are excluded from the catalog: they're rate-limited tiers whose
-// "$0" would otherwise sit at the top of every cheapest-first sort. Matches the
-// standalone word only, so "freeform"/"freedom" are untouched.
-const FREE_RX = /(^|[^a-z])free([^a-z]|$)/i;
-function isFreeTier(m) {
-  return FREE_RX.test(m.id || "") || FREE_RX.test(m.name || "");
+let inflight = null;
+// one fetch at a time — a manual Refresh landing on top of the timer (or a tab
+// coming back to the foreground) must not race two responses into MODELS.
+function load(isRefresh) {
+  return inflight || (inflight = doLoad(isRefresh).finally(() => { inflight = null; }));
 }
 
-// Meta-routers (openrouter/fusion, /pareto-code, /bodybuilder, /auto) report "-1"
-// for every rate because you pay whatever the model they pick charges. There is
-// nothing to cost, so they're dropped rather than listed as "variable".
-function isUncostable(m) {
-  const c = cost(m, DEFAULTS);
-  return c.unknown;
-}
-
-// "chat completions" = every priced text→text LLM in the catalog, across all providers.
-function pick(arr) {
-  return arr.filter(m => isTextModel(m) && !isFreeTier(m) && !isUncostable(m))
-            .map(x => ({ id: x.id, name: x.name, context_length: x.context_length, pricing: x.pricing, architecture: x.architecture }));
-}
-
-async function load(isRefresh) {
+async function doLoad(isRefresh) {
   const btn = $("#refreshBtn");
   if (isRefresh) btn.classList.add("spin");
   try {
     const r = await fetch(API, { cache: "no-store", headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const j = await r.json();
-    const data = pick(j.data || []);
+    const data = pick((j && j.data) || []);
     if (!data.length) throw new Error("empty");
     MODELS = data;
+    source = "live";
+    lastLiveAt = Date.now();
     // Per-provider pricing is now stale too — keeping it would let an open row's
     // breakdown contradict the headline price it sits under.
     EP_CACHE.clear();
@@ -255,10 +169,13 @@ async function load(isRefresh) {
   } catch (e) {
     const snap = window.OR_SNAPSHOT;
     if (MODELS.length) {
-      // we already have good data — a failed refresh must not downgrade it to an older snapshot
-      setStatus("err", "refresh failed · showing last good data");
+      // we already have good data — a failed refresh must not downgrade it to an
+      // older snapshot, and the pill must keep saying what is actually on screen
+      if (source === "snap") setStatus("snap", `${snap.generated} · refresh failed`);
+      else setStatus("err", "refresh failed · showing last live data");
     } else if (snap && snap.data && snap.data.length) {
       MODELS = pick(snap.data);
+      source = "snap";
       setStatus("snap", snap.generated);
       $("#footMeta").textContent = `${MODELS.length} models · offline snapshot (${snap.generated}) · live fetch unavailable`;
     } else {
@@ -343,8 +260,10 @@ function findFeatured(all) {
   return FEATURED.map(spec => {
     let d = null;
     for (const id of spec.ids) { d = all.find(x => x.m.id === id); if (d) break; }  // honor priority order
-    if (!d) d = all.find(x => spec.rx.test(x.m.id));
-    return { spec, d };
+    if (d) return { spec, d, label: spec.label };
+    // pinned id gone from the catalog → newest release of the family, under its own name
+    d = all.filter(x => spec.rx.test(x.m.id)).sort((a, b) => cmpVersion(b.m.id, a.m.id))[0] || null;
+    return { spec, d, label: d ? d.name : spec.label };
   });
 }
 
@@ -355,7 +274,7 @@ function renderFeatured(items) {
     if (!i.d) return `
       <div class="pod pod-missing">
         <div class="pod-rank"><span class="pod-medal">★</span> featured</div>
-        <h3 class="pod-name">${esc(i.spec.label)}</h3>
+        <h3 class="pod-name">${esc(i.label)}</h3>
         <div class="pod-cost">—<small>not in catalog</small></div>
       </div>`;
     const d = i.d, known = isFinite(d.c.total);
@@ -367,7 +286,7 @@ function renderFeatured(items) {
       <div class="pod ${best ? "pod-1" : ""}">
         <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? " · cheapest of 3" : ""}</div>
         <div class="pod-prov"><span class="m-dot" style="--c:${esc(d.meta.color)};width:8px;height:8px"></span>${esc(d.meta.label)}</div>
-        <h3 class="pod-name">${esc(i.spec.label)}<span class="pod-id">${esc(d.m.id)}</span></h3>
+        <h3 class="pod-name">${esc(i.label)}<span class="pod-id">${esc(d.m.id)}</span></h3>
         ${figure}
       </div>`;
   }).join("");
@@ -406,19 +325,16 @@ function row(d, maxCost) {
   const w = maxCost > 0 && isFinite(c.total) ? Math.max(2, (c.total / maxCost) * 88) : 0;
   const free = c.total === 0;
   const noCache = !c.unknown && !c.hasCache && usage.cache_read > 0;
-  const vision = hasVision(d.m);
+  const tier = tierOf(d.m);
   const id = esc(d.m.id), open = openId === d.m.id;
   const tags =
-    (vision ? '<span class="tag">vision</span>' : "") +
+    (hasVision(d.m) ? '<span class="tag">vision</span>' : "") +
+    (tier ? `<span class="tag" title="${esc(tierNote(tier))}">tiered</span>` : "") +
     (c.unknown ? '<span class="tag">variable</span>' : "") +
     (free ? '<span class="tag">free</span>' : "") +
     (noCache ? '<span class="tag">no cache</span>' : "");
-  const cards =
-    `${bd("Fresh input", c.cIn, c.total, `${f.format(usage.input)} tok × ${perM(c.inR)}/M`)}
-     ${bd("Output", c.cOut, c.total, `${f.format(usage.output)} tok × ${perM(c.outR)}/M`)}
-     ${bd("Cached reads", c.cCr, c.total, c.hasCache ? `${f.format(usage.cache_read)} tok × ${perM(c.crR)}/M` : "no native cache → billed as input")}
-     ${usage.cache_write > 0 ? bd("Cache writes", c.cCw, c.total, c.hasCache ? `${f.format(usage.cache_write)} tok × ${perM(c.cwR)}/M` : "no native cache → billed as input") : ""}
-     ${bdTotal(c.total)}`;
+  // The breakdown is only built for the open row. Building it for every closed
+  // row too was 57% of the HTML and 59% of the DOM on each render.
   return `
     <tr class="row" data-id="${id}" tabindex="0" aria-expanded="${open}"
         aria-label="${esc(d.name)} — ${money(c.total)} per month; toggle cost breakdown">
@@ -441,11 +357,22 @@ function row(d, maxCost) {
       </td>
     </tr>
     <tr class="detail ${open ? "open" : ""}" data-detail="${id}">
-      <td colspan="6"><div class="detail-inner">
-        <div class="bd-grid">${cards}</div>
-        ${provPanel(id, open)}
-      </div></td>
+      <td colspan="6"><div class="detail-inner">${open ? detailMarkup(d) : ""}</div></td>
     </tr>`;
+}
+
+// cost cards + upstream provider panel for one (open) row
+function detailMarkup(d) {
+  const c = d.c, tier = tierOf(d.m);
+  const cards =
+    bd("Fresh input", c.cIn, c.total, `${fmt(usage.input)} tok × ${perM(c.inR)}/M`) +
+    bd("Output", c.cOut, c.total, `${fmt(usage.output)} tok × ${perM(c.outR)}/M`) +
+    bd("Cached reads", c.cCr, c.total, c.hasCache ? `${fmt(usage.cache_read)} tok × ${perM(c.crR)}/M` : "no native cache → billed as input") +
+    (usage.cache_write > 0 ? bd("Cache writes", c.cCw, c.total, c.hasCache ? `${fmt(usage.cache_write)} tok × ${perM(c.cwR)}/M` : "no native cache → billed as input") : "") +
+    bdTotal(c.total);
+  return `<div class="bd-grid">${cards}</div>` +
+         (tier ? `<div class="tier-note">${esc(tierNote(tier))}</div>` : "") +
+         provPanel(d.m.id);
 }
 
 /* ---- upstream providers -------------------------------------------------- */
@@ -454,10 +381,10 @@ function row(d, maxCost) {
 // demand (opening a row), and cached for the session.
 const EP_CACHE = new Map();       // model id → { state, eps, msg }
 
-// The id comes from the API payload, so encode it — left raw, an id containing
-// "?" or "#" rewrites the request (the "/endpoints" suffix silently disappears
-// into a fragment and attacker-chosen query params ride along).
-const epUrl = id => `${API}/${id.replace(/^~/, "").split("/").map(encodeURIComponent).join("/")}/endpoints`;
+// The id comes from the API payload, so encode each path segment — left raw, an
+// id containing "?" or "#" rewrites the request (the "/endpoints" suffix silently
+// disappears into a fragment and attacker-chosen query params ride along).
+const epUrl = id => `${API}/${id.split("/").map(encodeURIComponent).join("/")}/endpoints`;
 
 async function loadEndpoints(id) {
   const prev = EP_CACHE.get(id);
@@ -530,39 +457,40 @@ function epMarkup(id) {
     <div class="prov-scroll">
       <table class="prov-table">
         <thead><tr>
-          <th>Provider</th><th>Context</th><th class="num">Input <small>$/M</small></th>
-          <th class="num">Output <small>$/M</small></th><th class="num">Cache read <small>$/M</small></th>
-          ${speed ? `<th class="num">Latency</th><th class="num">Throughput</th>` : ""}
-          <th class="num">Uptime <small>30m</small></th><th class="num">Your cost</th>
+          <th scope="col">Provider</th><th scope="col">Context</th><th scope="col" class="num">Input <small>$/M</small></th>
+          <th scope="col" class="num">Output <small>$/M</small></th><th scope="col" class="num">Cache read <small>$/M</small></th>
+          ${speed ? `<th scope="col" class="num">Latency</th><th scope="col" class="num">Throughput</th>` : ""}
+          <th scope="col" class="num">Uptime <small>30m</small></th><th scope="col" class="num">Your cost</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>`;
 }
 
-// patch just the open row's panel — a full render() would collapse it
-function paintEndpoints(id) {
-  const host = $(`.prov-body[data-ep="${CSS.escape(id)}"]`);
-  if (host) host.innerHTML = epMarkup(id);
-}
-
-// Body is only filled for the open row — closed rows keep an empty shell so the
-// panel doesn't cost anything across the other ~370 rows.
-function provPanel(id, open) {
+// Head (with the provider count) + body, so a repaint after the fetch lands
+// updates the count badge as well as the table.
+function provPanelInner(id) {
   const rec = EP_CACHE.get(id);
-  const n = open && rec && rec.state === "ok" ? rec.eps.length : 0;
+  const n = rec && rec.state === "ok" ? rec.eps.length : 0;
   return `
-    <div class="prov-panel">
       <div class="prov-head">Upstream providers${n ? ` <span class="prov-n">${n}</span>` : ""}
         <span class="prov-note">who OpenRouter can route this model to — priced against your usage, cheapest first</span>
       </div>
-      <div class="prov-body" data-ep="${esc(id)}">${open ? epMarkup(id) : ""}</div>
-    </div>`;
+      <div class="prov-body">${epMarkup(id)}</div>`;
+}
+function provPanel(id) {
+  return `<div class="prov-panel" data-ep="${esc(id)}">${provPanelInner(id)}</div>`;
+}
+
+// patch just the open row's panel — a full render() would collapse it
+function paintEndpoints(id) {
+  const host = $(`.prov-panel[data-ep="${CSS.escape(id)}"]`);
+  if (host) host.innerHTML = provPanelInner(id);
 }
 
 function bd(k, v, total, sub) {
-  const pct = total > 0 && isFinite(v) ? Math.round((v / total) * 100) : 0;
-  return `<div class="bd"><div class="bd-k">${esc(k)} · ${pct}%</div><div class="bd-v">${money(v)}</div><div class="bd-sub">${esc(sub)}</div></div>`;
+  const share = total > 0 && isFinite(v) ? Math.round((v / total) * 100) : 0;
+  return `<div class="bd"><div class="bd-k">${esc(k)} · ${share}%</div><div class="bd-v">${money(v)}</div><div class="bd-sub">${esc(sub)}</div></div>`;
 }
 function bdTotal(v) {
   return `<div class="bd total"><div class="bd-k">Monthly total</div><div class="bd-v">${money(v)}</div><div class="bd-sub">your usage on this model</div></div>`;
@@ -570,11 +498,11 @@ function bdTotal(v) {
 
 function render() {
   const all = decorate();
+  LAST = new Map(all.map(d => [d.m.id, d]));
   renderChips(all);
 
   // hero = three fixed featured models, costed against the current usage
   renderFeatured(findFeatured(all));
-  const paid = all.filter(d => isFinite(d.c.total) && d.c.total > 0).sort((a, b) => a.c.total - b.c.total);
 
   const list = applyFilterSort(all);
   // Filtering the open row out of view must close it — otherwise it silently
@@ -587,17 +515,22 @@ function render() {
 
   // update usage summary line
   const totalTok = usage.input + usage.output + usage.cache_read + usage.cache_write;
-  const cheapestPaid = paid[0];
+  let cheapestPaid = null;
+  for (const d of all) {
+    if (isFinite(d.c.total) && d.c.total > 0 && (!cheapestPaid || d.c.total < cheapestPaid.c.total)) cheapestPaid = d;
+  }
   const s = periodScale();
   const scaleNote = Math.abs(s - 1) > 0.001
     ? ` <b>Projected ×${(Math.round(s * 100) / 100)}</b> from your ${period.dataDays}-day data.`
     : "";
   $("#usageNote").innerHTML =
-    `Costing <b>${f.format(totalTok)}</b> tokens / ${period.projectDays}-day month — ` +
-    `${f.format(usage.input)} fresh in · ${f.format(usage.output)} out · ${f.format(usage.cache_read)} cached.` +
+    `Costing <b>${fmt(totalTok)}</b> tokens / ${period.projectDays}-day month — ` +
+    `${fmt(usage.input)} fresh in · ${fmt(usage.output)} out · ${fmt(usage.cache_read)} cached.` +
     scaleNote +
     ` Across <b>${all.length}</b> text models, ` +
-    (cheapestPaid ? `cheapest is <b>${money(cheapestPaid.c.total)}/mo</b> (${esc(cheapestPaid.name)}). Free tiers are excluded; routers with variable pricing can't be costed.` : "no priced match.");
+    (cheapestPaid
+      ? `cheapest is <b>${money(cheapestPaid.c.total)}/mo</b> (${esc(cheapestPaid.name)}). Free tiers, batch variants and OpenRouter's routers/aliases are excluded.`
+      : "no priced match.");
 }
 
 /* flash the cost cells after a usage edit (visual feedback that numbers moved) */
@@ -615,7 +548,7 @@ function flashCosts() {
 const FIELD_IDS = { input: "#u_input", output: "#u_output", cache_read: "#u_cache_read", cache_write: "#u_cache_write" };
 
 function writeFields() {
-  for (const [k, sel] of Object.entries(FIELD_IDS)) $(sel).value = f.format(usage[k]);
+  for (const [k, sel] of Object.entries(FIELD_IDS)) $(sel).value = fmt(usage[k]);
 }
 
 function writePeriod() {
@@ -647,12 +580,12 @@ function applyHit(rate) {
 
 function writeHitLabel() {
   const r = hitRate();
-  const pct = Math.round(r * 100);
-  $("#hitVal").textContent = pct + "%";
-  $("#hitSlider").style.setProperty("--fill", pct + "%");
-  $$("#hitPresets .hr-preset").forEach(b => b.classList.toggle("on", +b.dataset.hr === pct));
+  const share = Math.round(r * 100);
+  $("#hitVal").textContent = share + "%";
+  $("#hitSlider").style.setProperty("--fill", share + "%");
+  $$("#hitPresets .hr-preset").forEach(b => b.classList.toggle("on", +b.dataset.hr === share));
   $("#hitHint").innerHTML =
-    `→ <b>${f.format(usage.cache_read)}</b> cached read · <b>${f.format(usage.input)}</b> fresh input / ${period.projectDays}-day mo. ` +
+    `→ <b>${fmt(usage.cache_read)}</b> cached read · <b>${fmt(usage.input)}</b> fresh input / ${period.projectDays}-day mo. ` +
     `Only changes cost for cache-capable models — Anthropic needs explicit cache breakpoints; OpenAI/Gemini/DeepSeek auto-cache.`;
 }
 
@@ -696,7 +629,7 @@ function bindUsage() {
       render();
       flashCosts();
     });
-    el.addEventListener("blur", () => { el.value = f.format(usage[k]); });
+    el.addEventListener("blur", () => { el.value = fmt(usage[k]); });
     el.addEventListener("focus", () => { el.value = usage[k] ? String(usage[k]) : ""; el.select(); });
   }
   $("#resetBtn").addEventListener("click", () => {
@@ -750,15 +683,20 @@ function bindControls() {
   // expand/collapse breakdown rows (mouse + keyboard)
   const toggleRow = tr => {
     const id = tr.dataset.id;
-    openId = openId === id ? null : id;
-    const det = $(`tr.detail[data-detail="${CSS.escape(id)}"]`);
+    const opening = openId !== id;
     $$("#rows tr.row[aria-expanded='true']").forEach(x => x.setAttribute("aria-expanded", "false"));
-    $$("#rows tr.detail.open").forEach(x => { if (x !== det) x.classList.remove("open"); });
-    if (det) det.classList.toggle("open", openId === id);
-    tr.setAttribute("aria-expanded", String(openId === id));
-    if (openId !== id) return;
-    // opening: show the placeholder now, fill in when the provider list lands
-    paintEndpoints(id);
+    $$("#rows tr.detail.open").forEach(x => x.classList.remove("open"));
+    openId = opening ? id : null;
+    if (!opening) return;
+    // opening: build the breakdown now (closed rows carry an empty shell), show
+    // the provider placeholder, fill it in when the list lands
+    const det = $(`tr.detail[data-detail="${CSS.escape(id)}"]`);
+    const d = LAST.get(id);
+    if (det && d) {
+      det.querySelector(".detail-inner").innerHTML = detailMarkup(d);
+      det.classList.add("open");
+    }
+    tr.setAttribute("aria-expanded", "true");
     loadEndpoints(id).then(() => { if (openId === id) paintEndpoints(id); });
   };
   $("#rows").addEventListener("click", e => {
@@ -772,25 +710,7 @@ function bindControls() {
   });
 }
 
-/* ---- Hermes Insights parser ---------------------------------------------- */
-// Reads the "Tokens: <total> (in: <in> / out: <out>)" line from a pasted Insights block.
-function parseInsights(text) {
-  const grab = re => { const m = text.match(re); return m ? parseNum(m[1]) : null; };
-  // reporting window, e.g. "Hermes Insights — Last 7 days" / "Last 24 hours" / "Last 4 weeks"
-  const w = text.match(/last\s+([\d.]+)\s*(hour|day|week|month)/i);
-  let windowDays = null;
-  if (w) {
-    const n = parseFloat(w[1]), u = w[2].toLowerCase();
-    windowDays = u === "hour" ? n / 24 : u === "week" ? n * 7 : u === "month" ? n * 30 : n;
-  }
-  return {
-    total: grab(/tokens?:\s*([\d,\s]+?)\s*\(/i) ?? grab(/tokens?:\s*([\d,]+)/i),
-    inp:   grab(/\bin:\s*([\d,]+)/i),
-    out:   grab(/\bout:\s*([\d,]+)/i),
-    windowDays
-  };
-}
-
+/* ---- Hermes Insights import ---------------------------------------------- */
 function setPasteMsg(text, isErr) {
   const el = $("#pasteMsg");
   el.textContent = text;
@@ -840,13 +760,14 @@ function loadInsights() {
     : `No “Last N days” line found — assuming ~30 days (no scaling).`;
   const warn = knownSplit ? "" :
     " ⚠ No “in: … / out: …” split found, so everything is costed as fresh input — set the cache hit rate below to model your real split.";
-  setPasteMsg(`Loaded ✓ ${note}  ${f.format(usage.input)} in · ${f.format(usage.output)} out · ${f.format(usage.cache_read)} cached / mo${warn}`, !knownSplit);
+  setPasteMsg(`Loaded ✓ ${note}  ${fmt(usage.input)} in · ${fmt(usage.output)} out · ${fmt(usage.cache_read)} cached / mo${warn}`, !knownSplit);
 }
 
 function bindPaste() {
   $("#pasteToggle").addEventListener("click", () => {
     const box = $("#pasteBox");
     box.hidden = !box.hidden;
+    $("#pasteToggle").setAttribute("aria-expanded", String(!box.hidden));
     if (!box.hidden) $("#pasteArea").focus();
   });
   $("#pasteLoad").addEventListener("click", loadInsights);
@@ -866,5 +787,9 @@ bindHit();
 bindControls();
 bindPaste();
 load(false);
-// quiet auto-refresh every 10 min — skipped while the tab is in the background
-setInterval(() => { if (!document.hidden) load(false); }, 10 * 60 * 1000);
+// quiet auto-refresh every 10 min — skipped while the tab is in the background…
+setInterval(() => { if (!document.hidden) load(false); }, REFRESH_MS);
+// …so a tab left hidden for an hour comes back stale. Catch up when it returns.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && Date.now() - lastLiveAt > REFRESH_MS) load(false);
+});
