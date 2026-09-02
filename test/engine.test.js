@@ -60,6 +60,17 @@ test("cost: -1 pricing is unknown and never totals", () => {
   assert.ok(Number.isNaN(c.total));
 });
 
+test("costBarWidth is log-scaled between the visible extremes", () => {
+  assert.equal(E.costBarWidth(NaN, 1, 100), 0);
+  assert.equal(E.costBarWidth(0, 1, 100), 0);
+  assert.equal(E.costBarWidth(10, Infinity, 0), 0);   // empty list
+  assert.equal(E.costBarWidth(1, 1, 100), 6);
+  assert.equal(E.costBarWidth(100, 1, 100), 88);
+  assert.equal(E.costBarWidth(10, 1, 100), 47);        // halfway in log space
+  assert.equal(E.costBarWidth(5, 5, 5), 44);           // single value
+  assert.equal(E.costBarWidth(1000, 1, 100), 88);      // clamped
+});
+
 test("tierOf: lowest long-context threshold, or null", () => {
   assert.equal(E.tierOf(model({ prompt: "1", completion: "2" })), null);
   assert.equal(E.tierOf(model({ prompt: "1", completion: "2", overrides: [] })), null);
