@@ -281,7 +281,7 @@ function renderFeatured(items) {
     return `
       <div class="pod ${best ? "pod-1" : ""}" data-id="${esc(d.m.id)}" role="button" tabindex="0"
            aria-label="${esc(i.label)}: ${money(c.total)} per month. Open its row in the table">
-        <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? `<span class="pod-flag">cheapest of 3</span>` : ""}</div>
+        <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? `<span class="pod-flag">cheapest of ${costs.length}</span>` : ""}</div>
         <div class="pod-prov"><span class="m-dot" style="--c:${esc(d.meta.color)};width:8px;height:8px"></span>${esc(d.meta.label)}</div>
         <h3 class="pod-name">${esc(i.label)}<span class="pod-id">${esc(d.m.id)}</span></h3>
         ${figure}${split}
@@ -320,7 +320,7 @@ function countUp(el, target) {
 function row(d, scale) {
   const c = d.c;
   const w = costBarWidth(c.total, scale.lo, scale.hi);
-  const free = c.total === 0;
+  const free = c.inR === 0 && c.outR === 0;   // a $0 rate, not a $0 bill from zero usage
   const tier = tierOf(d.m);
   const id = esc(d.m.id), open = openId === d.m.id;
   const tags =
@@ -551,8 +551,12 @@ function writeFields() {
 }
 
 function writePeriod() {
-  $("#p_data").value = period.dataDays;
-  $("#p_proj").value = period.projectDays;
+  // Leave the box being typed in alone: rewriting it mid-edit snapped an emptied
+  // field back to 30 (backspace then "7" gave "307") and ate a trailing "." so
+  // decimals couldn't be entered. It is normalised on blur instead.
+  const act = document.activeElement;
+  if (act !== $("#p_data")) $("#p_data").value = period.dataDays;
+  if (act !== $("#p_proj")) $("#p_proj").value = period.projectDays;
   const s = periodScale();
   const mult = $("#periodMult");
   mult.textContent = "×" + (Math.round(s * 100) / 100);
@@ -661,8 +665,10 @@ function bindPeriod() {
     render();
     flashCosts();
   };
-  $("#p_data").addEventListener("input", upd);
-  $("#p_proj").addEventListener("input", upd);
+  for (const sel of ["#p_data", "#p_proj"]) {
+    $(sel).addEventListener("input", upd);
+    $(sel).addEventListener("blur", () => writePeriod());
+  }
 }
 
 /* ---- other controls ------------------------------------------------------ */
