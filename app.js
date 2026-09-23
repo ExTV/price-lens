@@ -24,12 +24,13 @@ const DEFAULTS = {
   cache_write: 0
 };
 
-// Always-shown hero trio. Matched by exact id (in priority order); if none of
-// those is in the catalog any more, the newest release matching `rx` stands in
-// and is shown under its own name.
+// Always-shown hero trio: the newest release of each family (`rx` or a listed
+// id). A pin used to win outright, so GPT-5.6 Sol stayed featured after GPT-6
+// Sol shipped. The listed ids now only break version ties, in order, and give
+// the card its short label; anything else is shown under its own name.
 const FEATURED = [
   { ids: ["anthropic/claude-fable-5.1"],                                              rx: /^anthropic\/claude-fable-[\d.]+$/,       label: "Fable 5.1" },
-  { ids: ["openai/gpt-5.6-sol"],                                                      rx: /^openai\/gpt-[\d.]+-sol$/,               label: "GPT-5.6 Sol" },
+  { ids: ["openai/gpt-6-sol"],                                                        rx: /^openai\/gpt-[\d.]+-sol$/,               label: "GPT-6 Sol" },
   { ids: ["google/gemini-3.1-pro-preview", "google/gemini-3.1-pro-preview-customtools"], rx: /^google\/gemini-[\d.]+-pro(-preview)?$/, label: "Gemini 3.1 Pro" }
 ];
 
@@ -43,7 +44,9 @@ const PROV_LABEL = {
   inception: "Inception", reka: "Reka", baidu: "Baidu", tencent: "Tencent", "01-ai": "01.AI",
   inflection: "Inflection", allenai: "Ai2", "arcee-ai": "Arcee", stepfun: "StepFun", thedrummer: "TheDrummer",
   sao10k: "Sao10K", agentica: "Agentica", "bytedance-seed": "ByteDance", inclusionai: "inclusionAI",
-  upstage: "Upstage", "ibm-granite": "IBM", sakana: "Sakana"
+  upstage: "Upstage", "ibm-granite": "IBM", sakana: "Sakana", xiaomi: "Xiaomi", meituan: "Meituan",
+  kwaipilot: "Kwaipilot", poolside: "Poolside", writer: "Writer", bytedance: "ByteDance",
+  thinkingmachines: "Thinking Machines", "aion-labs": "AionLabs"
 };
 
 // Only the busiest labs get a hue. Thirty near-identical brand colours told
@@ -245,12 +248,10 @@ function renderChips(all) {
 
 function findFeatured(all) {
   return FEATURED.map(spec => {
-    let d = null;
-    for (const id of spec.ids) { d = all.find(x => x.m.id === id); if (d) break; }  // honor priority order
-    if (d) return { spec, d, label: spec.label };
-    // pinned id gone from the catalog → newest release of the family, under its own name
-    d = all.filter(x => spec.rx.test(x.m.id)).sort((a, b) => cmpVersion(b.m.id, a.m.id))[0] || null;
-    return { spec, d, label: d ? d.name : spec.label };
+    const rank = id => { const i = spec.ids.indexOf(id); return i < 0 ? spec.ids.length : i; };
+    const d = all.filter(x => spec.rx.test(x.m.id) || spec.ids.includes(x.m.id))
+                 .sort((a, b) => cmpVersion(b.m.id, a.m.id) || rank(a.m.id) - rank(b.m.id))[0] || null;
+    return { spec, d, label: d && spec.ids.includes(d.m.id) ? spec.label : d ? d.name : spec.label };
   });
 }
 
@@ -281,7 +282,7 @@ function renderFeatured(items) {
     return `
       <div class="pod ${best ? "pod-1" : ""}" data-id="${esc(d.m.id)}" role="button" tabindex="0"
            aria-label="${esc(i.label)}: ${money(c.total)} per month. Open its row in the table">
-        <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? `<span class="pod-flag">cheapest of 3</span>` : ""}</div>
+        <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? `<span class="pod-flag">cheapest of ${costs.length}</span>` : ""}</div>
         <div class="pod-prov"><span class="m-dot" style="--c:${esc(d.meta.color)};width:8px;height:8px"></span>${esc(d.meta.label)}</div>
         <h3 class="pod-name">${esc(i.label)}<span class="pod-id">${esc(d.m.id)}</span></h3>
         ${figure}${split}
@@ -320,7 +321,7 @@ function countUp(el, target) {
 function row(d, scale) {
   const c = d.c;
   const w = costBarWidth(c.total, scale.lo, scale.hi);
-  const free = c.total === 0;
+  const free = c.inR === 0 && c.outR === 0;   // a $0 rate, not a $0 bill from zero usage
   const tier = tierOf(d.m);
   const id = esc(d.m.id), open = openId === d.m.id;
   const tags =
@@ -433,9 +434,14 @@ function epMarkup(id) {
     const dsc = num(e.pricing && e.pricing.discount);
     const disc = dsc > 0 ? `<span class="prov-off">${Math.round(dsc * 100)}% off</span>` : "";
     const quant = e.quantization && e.quantization !== "unknown" ? e.quantization : "";
+    // One provider can list several endpoints — "openai/flex" (half price, slow),
+    // "openai/fast" (2×), "azure/us" (regional, +10%). Without the variant they
+    // read as duplicate rows at different prices.
+    const variant = String(e.tag || "").split("/").slice(1).join("/");
     return `
       <tr class="${best ? "prov-best" : ""}">
         <td class="prov-nm">${esc(e.provider_name || e.name || "—")}${
+          variant ? `<span class="tag">${esc(variant)}</span>` : ""}${
           quant ? `<span class="tag">${esc(quant)}</span>` : ""}${disc}${
           best && rows.length > 1 ? `<span class="tag tag-best">cheapest</span>` : ""}</td>
         <td class="prov-ctx">${ctxFmt(e.context_length)}</td>
@@ -551,8 +557,12 @@ function writeFields() {
 }
 
 function writePeriod() {
-  $("#p_data").value = period.dataDays;
-  $("#p_proj").value = period.projectDays;
+  // Leave the box being typed in alone: rewriting it mid-edit snapped an emptied
+  // field back to 30 (backspace then "7" gave "307") and ate a trailing "." so
+  // decimals couldn't be entered. It is normalised on blur instead.
+  const act = document.activeElement;
+  if (act !== $("#p_data")) $("#p_data").value = period.dataDays;
+  if (act !== $("#p_proj")) $("#p_proj").value = period.projectDays;
   const s = periodScale();
   const mult = $("#periodMult");
   mult.textContent = "×" + (Math.round(s * 100) / 100);
@@ -661,8 +671,10 @@ function bindPeriod() {
     render();
     flashCosts();
   };
-  $("#p_data").addEventListener("input", upd);
-  $("#p_proj").addEventListener("input", upd);
+  for (const sel of ["#p_data", "#p_proj"]) {
+    $(sel).addEventListener("input", upd);
+    $(sel).addEventListener("blur", () => writePeriod());
+  }
 }
 
 /* ---- other controls ------------------------------------------------------ */
