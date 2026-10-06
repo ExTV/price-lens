@@ -93,3 +93,43 @@ test("app.js only uses engine exports that exist", () => {
   const wanted = m[1].split(",").map(s => s.trim()).filter(Boolean);
   for (const name of wanted) assert.equal(typeof E[name], "function", `engine.js does not export ${name}`);
 });
+
+// The UI glyph set (Lucide stroke icons) is also generated. Guard both halves:
+// every icon the page asks for must exist in the sprite, and every symbol must
+// be a well-formed, currentColor stroke icon that is safe to concatenate.
+test("every UI icon referenced by the page exists in the sprite", () => {
+  const I = require("../icons.js");
+  const referenced = new Set();
+  for (const f of ["index.html", "app.js"]) {
+    const src = read(f);
+    for (const m of src.matchAll(/#ui-([a-zA-Z0-9]+)/g)) referenced.add(m[1]);
+    for (const m of src.matchAll(/uiIcon\(\s*"([a-zA-Z0-9]+)"/g)) referenced.add(m[1]);
+    for (const m of src.matchAll(/uiIcon\(\s*pinned \? "(\w+)" : "(\w+)"/g)) { referenced.add(m[1]); referenced.add(m[2]); }
+  }
+  assert.ok(referenced.size >= 12, `only found ${referenced.size} UI refs — parser regressed`);
+  for (const name of referenced) {
+    assert.ok(I.UI[name], `page references #ui-${name} but icons.js has no such icon — rebuild icons.js`);
+  }
+});
+
+test("icons.js UI symbols are well-formed stroke icons and sprite-safe", () => {
+  const I = require("../icons.js");
+  const names = Object.keys(I.UI);
+  assert.ok(names.length >= 20, `only ${names.length} UI icons — UI set regressed`);
+  const symbolIds = new Set();
+  for (const name of names) {
+    const s = I.UI[name];
+    assert.ok(s.startsWith("<symbol ") && s.endsWith("</symbol>"), `${name} is not a symbol`);
+    assert.match(s, /viewBox="[^"]+"/, `${name} has no viewBox`);
+    assert.ok(/stroke="currentColor"/.test(s), `${name} is not a currentColor stroke icon`);
+    assert.ok(/fill="none"/.test(s), `${name} is not fill:none — Lucide stroke set`);
+    assert.ok(!/<!--/.test(s), `${name} carries a comment that would bloat the sprite`);
+    const id = (s.match(/<symbol id="([^"]+)"/) || [])[1];
+    assert.equal(id, `ui-${name}`, `${name} has the wrong symbol id`);
+    assert.ok(!symbolIds.has(id), `duplicate UI symbol id ${id}`);
+    symbolIds.add(id);
+  }
+  // The favicon is a self-contained data URI usable in a <link rel="icon">.
+  assert.ok(I.FAVICON && I.FAVICON.startsWith("data:image/svg+xml"), "icons.js must export a FAVICON data URI");
+});
+

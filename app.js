@@ -90,18 +90,12 @@ function provMeta(prov) {
    real company logos, monochrome so each inherits currentColor. Providers with
    no official vector logo fall back to a letter monogram. Injected once, then
    every row/chip references it with <use> — no image requests, CSP-safe. */
-const ICONS = (typeof window !== "undefined" && window.PriceLensIcons) || { SYMBOLS: {}, SLUG_TO_ID: {} };
-let spriteInjected = false;
-function injectSprite() {
-  if (spriteInjected) return;
-  spriteInjected = true;
-  const ids = Object.keys(ICONS.SYMBOLS);
-  if (!ids.length) return;
-  const wrap = document.createElement("div");
-  wrap.setAttribute("aria-hidden", "true");
-  wrap.setAttribute("style", "position:absolute;width:0;height:0;overflow:hidden");
-  wrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${ids.map(k => ICONS.SYMBOLS[k]).join("")}</svg>`;
-  document.body.prepend(wrap);
+const ICONS = (typeof window !== "undefined" && window.PriceLensIcons) || { SYMBOLS: {}, SLUG_TO_ID: {}, UI: {} };
+// A UI glyph (Lucide stroke icon) from the sprite. icons.js self-injects the
+// whole sprite (provider logos + UI symbols) at load, so these <use> refs
+// always resolve. Size/color come from the .ico CSS in the surrounding context.
+function uiIcon(name, cls) {
+  return `<svg class="ico${cls ? " " + cls : ""}" aria-hidden="true"><use href="#ui-${name}"></use></svg>`;
 }
 // A provider's logo (sprite <use>) or, when none exists, a letter monogram in
 // that provider's hue. gold=true paints the accent — active filter chip, pinned
@@ -288,7 +282,7 @@ function renderChips(all) {
   const chip = it => {
     const on = filterProv === it.key;
     const mark = it.prov ? providerIcon(it.prov, it.label, on)
-                         : `<span class="m-icon m-all${on ? " gold" : ""}" aria-hidden="true">◧</span>`;
+                         : `<svg class="m-icon ico${on ? " gold" : ""}" aria-hidden="true"><use href="#ui-all"></use></svg>`;
     return `
     <button type="button" class="chip ${on ? "active" : ""}" data-prov="${esc(it.key)}" aria-pressed="${on}">
       ${mark}${esc(it.label)}<span class="cnt">${it.n}</span>
@@ -296,7 +290,7 @@ function renderChips(all) {
   };
   const more = tail.length
     ? `<button type="button" class="chip chip-more" data-more="1" aria-expanded="${chipsOpen}">${
-        chipsOpen ? "− less" : `+${tail.length} more`}</button>`
+        chipsOpen ? `${uiIcon("less")} less` : `+${tail.length} ${uiIcon("more")} more`}</button>`
     : "";
   $("#chips").innerHTML = (chipsOpen ? [...head, ...tail] : head).map(chip).join("") + more;
 }
@@ -316,7 +310,7 @@ function renderFeatured(items) {
   const cards = items.map(i => {
     if (!i.d) return `
       <div class="pod pod-missing">
-        <div class="pod-rank"><span class="pod-medal">★</span> featured</div>
+        <div class="pod-rank">${uiIcon("star", "pod-medal")} featured</div>
         <h3 class="pod-name">${esc(i.label)}</h3>
         <div class="pod-cost">—<small>not in catalog</small></div>
       </div>`;
@@ -337,14 +331,14 @@ function renderFeatured(items) {
     return `
       <div class="pod ${best ? "pod-1" : ""}" data-id="${esc(d.m.id)}" role="button" tabindex="0"
            aria-label="${esc(i.label)}: ${money(c.total)} per month. Open its row in the table">
-        <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? `<span class="pod-flag">cheapest of ${costs.length}</span>` : ""}</div>
+        <div class="pod-rank">${uiIcon("star", "pod-medal")} featured${best ? `<span class="pod-flag">cheapest of ${costs.length}</span>` : ""}</div>
         <div class="pod-prov">${providerIcon(d.prov, d.meta.label, best)}${esc(d.meta.label)}</div>
         <h3 class="pod-name">${esc(i.label)}<span class="pod-id">${esc(d.m.id)}</span></h3>
         ${figure}${split}
       </div>`;
   }).join("");
   $("#podium").innerHTML =
-    `<div class="podium-cap">★ Featured models · your monthly cost</div><div class="pod-row">${cards}</div>`;
+    `<div class="podium-cap">${uiIcon("star", "pod-medal")} Featured models · your monthly cost</div><div class="pod-row">${cards}</div>`;
   // Count up on the first paint only. Re-running it on every render meant each
   // keystroke / slider tick restarted the animation and stacked rAF loops that
   // fought over the same element.
@@ -518,7 +512,7 @@ function renderCompare(all) {
       <div class="compare-pills">
         ${selected.map(d => `
           <button class="compare-pill" type="button" data-compare-remove="${esc(d.m.id)}" title="Remove ${esc(d.name)}">
-            ${providerIcon(d.prov, d.name, true)}${esc(d.name)}<span aria-hidden="true">×</span>
+            ${providerIcon(d.prov, d.name, true)}${esc(d.name)}${uiIcon("close", "pill-x")}
           </button>`).join("")}
       </div>
       <div class="compare-actions">
@@ -577,7 +571,7 @@ function row(d, scale) {
           <button type="button" class="pin-btn ${pinned ? "on" : ""}" data-compare-id="${id}"
                   aria-pressed="${pinned}"
                   aria-label="${pinned ? "Remove from comparison" : "Add to comparison"}: ${esc(d.name)}">
-            <span aria-hidden="true">${pinned ? "✓" : "+"}</span>
+            ${uiIcon(pinned ? "check" : "plus", "pin-ico")}
           </button>
         </div>
       </td>
@@ -842,10 +836,10 @@ function writeHitLabel() {
   $$("#hitPresets .hr-preset").forEach(b => b.classList.toggle("on", +b.dataset.hr === share));
   // If a drag replaced a scaled projection, say what happened to the window.
   const dropped = periodDropped > 1.001
-    ? ` <b>⚠</b> Your ${periodDropped.toFixed(2)}× projection was baked in — the figures above are now literal monthly counts.`
+    ? ` ${uiIcon("alert", "msg-alert")} Your ${periodDropped.toFixed(2)}× projection was baked in — the figures above are now literal monthly counts.`
     : "";
   $("#hitHint").innerHTML =
-    `→ <b>${fmt(usage.cache_read)}</b> cached read · <b>${fmt(usage.input)}</b> fresh input / ${period.projectDays}-day mo. ` +
+    `${uiIcon("arrow")} <b>${fmt(usage.cache_read)}</b> cached read · <b>${fmt(usage.input)}</b> fresh input / ${period.projectDays}-day mo. ` +
     `Only changes cost for cache-capable models — Anthropic needs explicit cache breakpoints; OpenAI/Gemini/DeepSeek auto-cache.` + dropped;
 }
 
@@ -1065,7 +1059,8 @@ function bindControls() {
 /* ---- usage import -------------------------------------------------------- */
 function setPasteMsg(text, isErr) {
   const el = $("#pasteMsg");
-  el.textContent = text;
+  // Callers pass a mix of escaped text and inline <svg> icons.
+  el.innerHTML = text;
   el.classList.toggle("err", !!isErr);
 }
 
@@ -1099,9 +1094,9 @@ function applyImportedUsage(parsed) {
   // Otherwise we can't tell cheap cached reads from full-price fresh input, and
   // guessing "all cache" understates the bill by an order of magnitude.
   const warn = parsed.knownSplit === false
-    ? " ⚠ No cache split found, so everything is costed as fresh input — set the cache hit rate below to model your real split."
+    ? ` ${uiIcon("alert", "msg-alert")} No cache split found, so everything is costed as fresh input — set the cache hit rate below to model your real split.`
     : "";
-  setPasteMsg(`Loaded ✓ ${srcLabel} · ${note}  ${fmt(usage.input)} in · ${fmt(usage.output)} out · ${fmt(usage.cache_read)} cached / mo${warn}`, !parsed.knownSplit);
+  setPasteMsg(`${uiIcon("check", "msg-ok")} Loaded ${esc(srcLabel)} · ${esc(note)}  ${fmt(usage.input)} in · ${fmt(usage.output)} out · ${fmt(usage.cache_read)} cached / mo${warn}`, !parsed.knownSplit);
 }
 
 function loadImport() {
@@ -1163,7 +1158,7 @@ function applyPreset(preset, label) {
   render();
   flashCosts();
   persistState();
-  setPasteMsg(`Loaded ✓ ${label}`, false);
+  setPasteMsg(`${uiIcon("check", "msg-ok")} Loaded ${esc(label)}`, false);
 }
 
 function bindPresets() {
@@ -1188,16 +1183,16 @@ function renderDash(all) {
   const cacheCapable = all.filter(d => d.c.hasCache).length;
 
   $("#dashCheapest").innerHTML =
-    `<span class="dash-k">Cheapest</span><span class="dash-v">${money(cheapest.c.total)}<small>/mo</small></span>` +
+    `<span class="dash-k">${uiIcon("dashCheapest")} Cheapest</span><span class="dash-v">${money(cheapest.c.total)}<small>/mo</small></span>` +
     `<span class="dash-s">${esc(cheapest.name)}</span>`;
   $("#dashSpread").innerHTML =
-    `<span class="dash-k">Cost spread</span><span class="dash-v">${money(priciest.c.total - cheapest.c.total)}</span>` +
+    `<span class="dash-k">${uiIcon("dashSpread")} Cost spread</span><span class="dash-v">${money(priciest.c.total - cheapest.c.total)}</span>` +
     `<span class="dash-s">${money(cheapest.c.total)} → ${money(priciest.c.total)} across ${paid.length} models</span>`;
   $("#dashCache").innerHTML =
-    `<span class="dash-k">Your cache hit</span><span class="dash-v">${hr}%</span>` +
+    `<span class="dash-k">${uiIcon("dashCache")} Your cache hit</span><span class="dash-v">${hr}%</span>` +
     `<span class="dash-s">${cacheCapable} of ${all.length} models support native caching</span>`;
   $("#dashModels").innerHTML =
-    `<span class="dash-k">Median model</span><span class="dash-v">${money(median.c.total)}<small>/mo</small></span>` +
+    `<span class="dash-k">${uiIcon("dashModels")} Median model</span><span class="dash-v">${money(median.c.total)}<small>/mo</small></span>` +
     `<span class="dash-s">${all.length} priced models in the catalog</span>`;
 }
 
@@ -1233,7 +1228,19 @@ function loadPersistedState() {
   } catch { /* corrupt entry — fall back to defaults */ }
 }
 
+function stateIsDefault() {
+  return base.input === DEFAULTS.input && base.output === DEFAULTS.output
+      && base.cache_read === DEFAULTS.cache_read && base.cache_write === DEFAULTS.cache_write
+      && period.dataDays === 30 && period.projectDays === 30
+      && !compareIds.length && filterProv === "all" && !query
+      && sortMode === "cost-asc" && !compareOpen;
+}
+
+// Only put state in the address bar when it actually differs from the defaults.
+// Personal restore already rides on localStorage, and Share builds its own link,
+// so a fresh visit should show a clean URL — not a wall of default figures.
 function encodeUrlState() {
+  if (stateIsDefault()) return "";
   const parts = [
     `u=${[base.input, base.output, base.cache_read, base.cache_write].join(",")}`,
     `pd=${period.dataDays}`, `pp=${period.projectDays}`
@@ -1279,7 +1286,7 @@ function bindShare() {
     const url = location.href.split("#")[0] + encodeUrlState();
     try {
       await navigator.clipboard.writeText(url);
-      setPasteMsg("Share link copied ✓ — it carries your usage, filters and pinned models.", false);
+      setPasteMsg(`${uiIcon("check", "msg-ok")} Share link copied — it carries your usage, filters and pinned models.`, false);
     } catch {
       prompt("Copy this link:", url);
     }
@@ -1297,7 +1304,7 @@ writeFields();
 writePeriod();
 writeHitRate();
 suppressUrlWrite = false;
-injectSprite();
+if (ICONS.inject) ICONS.inject();   // idempotent; icons.js already self-injects
 bindUsage();
 bindPeriod();
 bindHit();

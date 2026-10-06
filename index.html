@@ -10,17 +10,22 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0a09'/%3E%3Ctext x='16' y='23' font-size='21' text-anchor='middle' fill='%23f0c75e'%3E%E2%97%A7%3C/text%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%230b0a09%22%2F%3E%3Cg%20transform%3D%22translate(4%204)%22%20fill%3D%22none%22%20stroke%3D%22%23f0c75e%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207V5a2%202%200%200%201%202-2h2%22%20%2F%3E%20%3Cpath%20d%3D%22M17%203h2a2%202%200%200%201%202%202v2%22%20%2F%3E%20%3Cpath%20d%3D%22M21%2017v2a2%202%200%200%201-2%202h-2%22%20%2F%3E%20%3Cpath%20d%3D%22M7%2021H5a2%202%200%200%201-2-2v-2%22%20%2F%3E%20%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22%20%2F%3E%20%3Cpath%20d%3D%22m16%2016-1.9-1.9%22%20%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E" />
 <link rel="stylesheet" href="style.css?v=20261006c" />
 </head>
 <body>
+<!-- Sprite first: icons.js self-injects the SVG <symbol> defs before anything
+     that references them paints, so header glyphs never flash empty. -->
+<script src="engine.js?v=20261006c"></script>
+<script src="snapshot.js?v=20261006c"></script>
+<script src="icons.js?v=20261006c"></script>
 <div class="grain" aria-hidden="true"></div>
 <div class="glow glow-a" aria-hidden="true"></div>
 <div class="glow glow-b" aria-hidden="true"></div>
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-mark" aria-hidden="true">◧</span>
+    <svg class="brand-mark ico" aria-hidden="true"><use href="#ui-brand"></use></svg>
     <span class="brand-name">Price&nbsp;Lens</span>
     <span class="brand-sub">openrouter pricing, de-confused</span>
   </div>
@@ -30,7 +35,7 @@
       <span class="status-text" id="statusText">loading…</span>
     </div>
     <button class="btn-refresh" id="refreshBtn" title="Re-fetch live pricing">
-      <span class="refresh-ico" aria-hidden="true">↻</span> Refresh
+      <svg class="refresh-ico ico" aria-hidden="true"><use href="#ui-refresh"></use></svg> Refresh
     </button>
   </div>
 </header>
@@ -54,10 +59,10 @@
     <div class="usage-head">
       <h2>Your monthly usage</h2>
       <div class="usage-actions">
-        <button class="btn-reset" id="pasteToggle" title="Paste OpenClaw /status, /usage cost, or Hermes Insights" aria-expanded="false" aria-controls="pasteBox">⎘ Import usage</button>
-        <button class="btn-reset" id="presetBtn" title="A typical heavy-agent workload: bootstrap re-cache + heartbeat + tool loops">⚙ Heavy-agent preset</button>
-        <button class="btn-reset" id="shareBtn" title="Copy a shareable link carrying your usage, filters and pinned models">⛓ Share</button>
-        <button class="btn-reset" id="resetBtn" title="Restore the sample figures">⤺ Reset</button>
+        <button class="btn-reset" id="pasteToggle" title="Paste OpenClaw /status, /usage cost, or Hermes Insights" aria-expanded="false" aria-controls="pasteBox"><svg class="ico" aria-hidden="true"><use href="#ui-import"></use></svg> Import usage</button>
+        <button class="btn-reset" id="presetBtn" title="A typical heavy-agent workload: bootstrap re-cache + heartbeat + tool loops"><svg class="ico" aria-hidden="true"><use href="#ui-preset"></use></svg> Heavy-agent preset</button>
+        <button class="btn-reset" id="shareBtn" title="Copy a shareable link carrying your usage, filters and pinned models"><svg class="ico" aria-hidden="true"><use href="#ui-share"></use></svg> Share</button>
+        <button class="btn-reset" id="resetBtn" title="Restore the sample figures"><svg class="ico" aria-hidden="true"><use href="#ui-reset"></use></svg> Reset</button>
       </div>
     </div>
     <div class="paste-box" id="pasteBox" hidden>
@@ -70,7 +75,7 @@
         placeholder="Paste OpenClaw /status output here.&#10;&#10;🧮 Tokens: 8.2m in / 2.1m out&#10;🗄️ Cache: 91% hit · 84m cached, 9m new&#10;&#10;Also accepts /usage cost footers and usage.cost JSON."></textarea>
       <div class="paste-row">
         <span class="paste-msg" id="pasteMsg"></span>
-        <button class="btn-load" id="pasteLoad">Parse &amp; load ⏎</button>
+        <button class="btn-load" id="pasteLoad">Parse &amp; load <svg class="ico" aria-hidden="true"><use href="#ui-enter"></use></svg></button>
       </div>
       <p class="import-hint" id="importHint"></p>
     </div>
@@ -116,7 +121,7 @@
         <input type="text" inputmode="decimal" id="p_data" class="period-in" aria-label="Days your data covers" />
         <span class="period-unit">days</span>
       </span>
-      <span class="period-arrow">→</span>
+      <svg class="period-arrow ico" aria-hidden="true"><use href="#ui-arrow"></use></svg>
       <span class="period-seg">bill over
         <input type="text" inputmode="decimal" id="p_proj" class="period-in" aria-label="Days to bill over" />
         <span class="period-unit">days</span>
@@ -135,7 +140,7 @@
     <div class="chips" id="chips" role="group" aria-label="Filter by provider"></div>
     <div class="controls-right">
       <div class="search">
-        <span class="search-ico" aria-hidden="true">⌕</span>
+        <svg class="search-ico ico" aria-hidden="true"><use href="#ui-search"></use></svg>
         <input type="text" id="search" placeholder="filter models…" autocomplete="off" aria-label="Filter models by name or id" />
       </div>
       <label class="sortwrap">
@@ -184,9 +189,6 @@
 
 <aside class="compare-drawer" id="compareDrawer" aria-label="Pinned models" hidden></aside>
 
-<script src="engine.js?v=20261006c"></script>
-<script src="snapshot.js?v=20261006c"></script>
-<script src="icons.js?v=20261006c"></script>
 <script src="app.js?v=20261006c"></script>
 </body>
 </html>

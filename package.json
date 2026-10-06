@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@lobehub/icons-static-svg": "^1.95.1",
+    "lucide-static": "^1.52.0",
     "simple-icons": "^16.34.0"
   }
 }

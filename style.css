@@ -99,6 +99,20 @@ body {
 
 main { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; padding: 0 26px 90px; }
 
+/* ---- UI icons (Lucide stroke set) ---------------------------------------
+   Every interface glyph is a stroke icon from the injected sprite, sized in em
+   so it tracks the surrounding text and inherits its color via currentColor.
+   Provider brand marks (.m-icon) are separate filled logos and keep their own
+   sizing below. */
+.ico {
+  width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: -0.15em;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Icons living inside a provider-mark slot (the "All" chip) render at logo size. */
+.m-icon.ico { width: 16px; height: 16px; stroke-width: 1.9; color: var(--faint); }
+.m-icon.ico.gold { color: var(--gold); }
+
 /* ---- topbar -------------------------------------------------------------- */
 .topbar {
   position: relative; z-index: 3;
@@ -108,9 +122,9 @@ main { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; paddin
 }
 .brand { display: flex; align-items: baseline; gap: 11px; }
 .brand-mark {
-  font-size: var(--fs-2xl); color: var(--gold);
-  transform: translateY(2px);
-  text-shadow: 0 0 18px rgba(240,199,94,0.5);
+  width: 26px; height: 26px; color: var(--gold);
+  transform: translateY(4px);
+  filter: drop-shadow(0 0 10px rgba(240,199,94,0.45));
 }
 .brand-name {
   font-family: var(--serif);
@@ -146,7 +160,7 @@ main { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; paddin
 }
 .btn-refresh:hover { border-color: var(--dim); }
 .btn-refresh:active { transform: scale(0.96); }
-.refresh-ico { display: inline-block; }
+.refresh-ico { width: 15px; height: 15px; }
 .btn-refresh.spin .refresh-ico { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -176,9 +190,12 @@ main { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; paddin
 .dash-cheapest { border-color: rgba(240,199,94,0.22); }   /* gold: it is a cost figure */
 .dash-cheapest .dash-v { color: var(--gold-bright); }
 .dash-k {
-  display: block; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em;
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--faint); margin-bottom: 5px;
 }
+.dash-k .ico { width: 14px; height: 14px; stroke-width: 1.9; }
+.dash-cheapest .dash-k .ico { color: var(--gold); }
 .dash-v {
   display: block; font-family: var(--mono); font-size: var(--fs-2xl); font-weight: 600;
   letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1;
@@ -263,6 +280,7 @@ main { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; paddin
 }
 .period-in:focus { border-color: var(--dim); box-shadow: 0 0 0 3px rgba(236,230,218,0.06); }
 .period-unit, .period-arrow { color: var(--faint); }
+.period-arrow { width: 15px; height: 15px; align-self: center; }
 .period-mult {
   font-weight: 600; color: var(--faint);
   border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
@@ -308,6 +326,8 @@ input[type="range"]#hitSlider {
 .hitrate-hint b { color: var(--dim); font-weight: 500; }
 
 .usage-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.usage-actions .btn-reset { display: inline-flex; align-items: center; gap: 7px; }
+.usage-actions .btn-reset .ico { width: 14px; height: 14px; }
 
 /* paste-from-Hermes box */
 .paste-box { margin-top: 14px; }
@@ -332,21 +352,27 @@ input[type="range"]#hitSlider {
 .paste-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .paste-msg { font-size: var(--fs-sm); color: var(--good); }
 .paste-msg.err { color: var(--hot); }
+.paste-msg .ico { width: 14px; height: 14px; margin-right: 2px; }
+.paste-msg .msg-alert { color: var(--hot); }
+.hitrate-hint .msg-alert { color: var(--hot); }
 .btn-load {
+  display: inline-flex; align-items: center; gap: 7px;
   font-family: var(--mono); font-size: var(--fs-sm); color: var(--bg); font-weight: 600;
   background: var(--text); border: none; border-radius: 999px; padding: 8px 16px; cursor: pointer;
   white-space: nowrap; transition: background .16s, transform .16s;
 }
+.btn-load .ico { width: 14px; height: 14px; }
 .btn-load:hover { background: #fff; }
 .btn-load:active { transform: scale(0.96); }
 
 /* ---- podium / featured --------------------------------------------------- */
 .podium { margin-bottom: 34px; }
 .podium-cap {
+  display: flex; align-items: center; gap: 7px;
   font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--faint); margin: 0 0 12px;
 }
-.podium-cap::first-letter { color: var(--gold); }
+.podium-cap .ico { width: 14px; height: 14px; color: var(--gold); }
 .pod-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .pod {
   position: relative; border-radius: var(--r); padding: 18px 18px 16px;
@@ -369,7 +395,7 @@ input[type="range"]#hitSlider {
   font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--faint); display: flex; align-items: center; gap: 7px; margin-bottom: 12px;
 }
-.pod-medal { font-size: var(--fs-body); }
+.pod-medal { width: 15px; height: 15px; color: var(--gold); }
 .pod-1 .pod-medal { filter: drop-shadow(0 0 8px rgba(240,199,94,0.6)); }
 .pod-flag { margin-left: auto; color: var(--gold); letter-spacing: 0.06em; }
 .pod-prov {
@@ -500,7 +526,8 @@ body.compare-active main { padding-bottom: 190px; }
 }
 .compare-pill:hover { color: var(--text); border-color: var(--border-str); background: var(--surface-2); }
 .compare-pill .m-icon { width: 15px; height: 15px; }
-.compare-pill span:not(.m-icon) { color: var(--faint); }
+.compare-pill .pill-x { width: 13px; height: 13px; color: var(--faint); }
+.compare-pill:hover .pill-x { color: var(--hot); }
 .compare-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .compare-actions .btn-load { padding: 7px 14px; }
 .compare-actions .btn-load:disabled { opacity: 0.42; cursor: not-allowed; transform: none; }
@@ -550,10 +577,11 @@ body.compare-active main { padding-bottom: 190px; }
 /* long-tail providers toggle */
 .chip-more { background: transparent; border-style: dashed; color: var(--faint); }
 .chip-more:hover { color: var(--text); border-color: var(--dim); }
+.chip-more .ico { width: 13px; height: 13px; }
 
 .controls-right { display: flex; align-items: center; gap: 12px; flex: none; }
 .search { position: relative; display: flex; align-items: center; }
-.search-ico { position: absolute; left: 12px; color: var(--faint); font-size: var(--fs-lg); pointer-events: none; }
+.search-ico { position: absolute; left: 11px; width: 15px; height: 15px; color: var(--faint); pointer-events: none; }
 .search input {
   font-family: var(--mono); font-size: var(--fs-sm); color: var(--text);
   background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
@@ -615,9 +643,6 @@ tbody tr.row:hover .m-icon { color: var(--text); }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--dim)) 34%, transparent);
 }
 .m-icon.m-mono.gold { color: var(--gold); background: rgba(240,199,94,0.14); box-shadow: inset 0 0 0 1px rgba(240,199,94,0.4); }
-/* "All" chip glyph */
-.m-icon.m-all { display: inline-flex; align-items: center; justify-content: center; color: var(--faint); font-size: 15px; }
-.m-icon.m-all.gold { color: var(--gold); }
 .m-title { font-weight: 600; font-size: var(--fs-lg); line-height: 1.25; letter-spacing: -0.005em; }
 .m-id { font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.3; color: var(--faint); margin-top: 2px; }
 .m-prov { display: none; font-size: var(--fs-xs); line-height: 1.3; color: var(--faint); margin-top: 2px; }
@@ -632,6 +657,7 @@ tbody tr.row:hover .m-icon { color: var(--text); }
 .pin-btn:active { transform: scale(0.94); }
 .pin-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 .pin-btn.on { color: var(--bg); background: var(--gold); border-color: var(--gold); }   /* gold: this one is costing you attention */
+.pin-ico { width: 15px; height: 15px; }
 .tag {
   font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.4; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--faint); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; margin-left: 7px;
