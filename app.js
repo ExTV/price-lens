@@ -9,11 +9,14 @@
 
 const {
   fmt, esc, money, perM, ctxFmt, parseNum,
-  cost, tierOf, costBarWidth, providerOf, hasVision, pick, cmpVersion, parseInsights
+  cost, tierOf, costBarWidth, providerOf, hasVision, pick, cmpVersion,
+  parseUsage
 } = window.PriceLens;
 
 const API = "https://openrouter.ai/api/v1/models";
 const REFRESH_MS = 10 * 60 * 1000;
+const STORAGE_KEY = "pricelens-v3";
+const MAX_COMPARE = 4;
 
 // Generic sample workload so the page is alive on first load.
 // Replace via the field inputs or by pasting your own Hermes Insights block.
@@ -22,6 +25,20 @@ const DEFAULTS = {
   output:      3000000,    // completion
   cache_read:  60000000,   // re-sent cached context  (= total − in − out)
   cache_write: 0
+};
+
+// Typical heavy agent: bootstrap re-cache + heartbeat + tool loops.
+const AGENT_PRESET = {
+  input:       8200000,
+  output:      2100000,
+  cache_read:  84000000,
+  cache_write: 9000000
+};
+
+const IMPORT_HINTS = {
+  openclaw: "Reads 🧮 Tokens + 🗄️ Cache from /status, a “Last N days” line, and usage.cost JSON.",
+  hermes:   "Reads Tokens: <total> (in: … / out: …) from a Hermes Insights block.",
+  auto:     "Tries OpenClaw formats first (they carry the cache split), then Hermes Insights."
 };
 
 // Always-shown hero trio: the newest release of each family (`rx` or a listed
@@ -80,6 +97,11 @@ let filterProv = "all";
 let query = "";
 let sortMode = "cost-asc";
 let openId = null;                     // expanded row
+let compareIds = [];                   // pinned model ids, in the order the user picked them
+let compareOpen = false;               // expanded compare workspace
+let compareNotice = "";
+let importSrc = "openclaw";
+let suppressUrlWrite = false;
 
 // monthly projection: scale the reported tokens from their window up/down to the target.
 function periodScale() { return period.dataDays > 0 ? period.projectDays / period.dataDays : 1; }
@@ -318,12 +340,189 @@ function countUp(el, target) {
   })(t0);
 }
 
+/* ---- compare ------------------------------------------------------------- */
+// Pinned models live by id, so they survive a filter change — but they must not
+// outlive the catalog: a model OpenRouter drops has no price to compare.
+function syncCompareWithCatalog(all) {
+  const live = new Set(all.map(d => d.m.id));
+  compareIds = compareIds.filter(id => live.has(id));
+  if (!compareIds.length) compareOpen = false;
+}
+
+function selectedCompare(all) {
+  const byId = new Map(all.map(d => [d.m.id, d]));
+  return compareIds.map(id => byId.get(id)).filter(Boolean);
+}
+
+function toggleCompare(id) {
+  const i = compareIds.indexOf(id);
+  if (i >= 0) {
+    compareIds.splice(i, 1);
+    compareNotice = "";
+  } else if (compareIds.length >= MAX_COMPARE) {
+    compareNotice = `Compare up to ${MAX_COMPARE} models — remove one to add another.`;
+  } else {
+    compareIds.push(id);
+    compareNotice = "";
+  }
+  render();
+}
+
+// "unknown" rows (variable pricing → NaN total) can never win a cost comparison.
+// Among priced rows, a genuinely $0-rate model is preferred *after* the paid ones:
+// the table tags those rows "free", and render()/renderDash already treat the
+// cheapest real option as total > 0. A pinned $0 model only wins the badge when
+// nothing paid is pinned, so the panel never contradicts the dashboard.
+function compareWinners(selected) {
+  const priced = selected.filter(d => isFinite(d.c.total));
+  const paid = priced.filter(d => d.c.total > 0);
+  const pickBest = (list, score) =>
+    list.length ? list.reduce((a, b) => score(a) <= score(b) ? a : b) : null;
+  const cheapest = pickBest(paid.length ? paid : priced, d => d.c.total);
+  const largestCtx = pickBest(selected, d => -(d.m.context_length || 0));
+  const lowestInput = pickBest(paid.length ? paid : priced, d => d.c.inR);
+  return {
+    cheapestId: cheapest && cheapest.m.id,
+    contextId: largestCtx && largestCtx.m.id,
+    inputId: lowestInput && lowestInput.m.id
+  };
+}
+
+function compareSummary(selected, winners) {
+  const cheapest = selected.find(d => d.m.id === winners.cheapestId);
+  const context = selected.find(d => d.m.id === winners.contextId);
+  const cacheCount = selected.filter(d => d.c.hasCache).length;
+  const parts = [];
+  if (cheapest) parts.push(`Cheapest: <b>${esc(cheapest.name)}</b> ${money(cheapest.c.total)}/mo`);
+  if (context) parts.push(`Largest context: <b>${esc(context.name)}</b> ${ctxFmt(context.m.context_length)}`);
+  parts.push(`${cacheCount}/${selected.length} cache-capable`);
+  return parts.join(" · ");
+}
+
+function winnerTags(d, winners) {
+  const tags = [];
+  if (d.m.id === winners.cheapestId) tags.push("cheapest");
+  if (d.m.id === winners.contextId) tags.push("largest context");
+  if (d.m.id === winners.inputId) tags.push("lowest input");
+  if (d.c.hasCache) tags.push("cache");
+  if (hasVision(d.m)) tags.push("vision");
+  if (d.c.unknown) tags.push("variable pricing");
+  return tags.map(t => `<span class="compare-tag">${esc(t)}</span>`).join("");
+}
+
+// Same four tones as the podium split and the usage-field markers, so a pinned
+// card and its table row read as the same model's money.
+function costStack(c) {
+  if (c.unknown) return `<div class="compare-stack no-cost" aria-label="Pricing varies by routed provider"></div>`;
+  const parts = [
+    { label: "fresh", value: c.cIn, cls: "tone-1" },
+    { label: "output", value: c.cOut, cls: "tone-2" },
+    { label: "cache", value: c.cCr, cls: "tone-3" },
+    { label: "write", value: c.cCw, cls: "tone-4" }
+  ].filter(p => p.value > 0);
+  if (!parts.length || c.total <= 0) return `<div class="compare-stack no-cost" aria-label="No billable cost"></div>`;
+  return `<div class="compare-stack" aria-label="Cost breakdown">${parts.map(p =>
+    `<span class="seg ${p.cls}" style="width:${Math.max(3, p.value / c.total * 100).toFixed(1)}%" title="${esc(p.label)} ${money(p.value)}"></span>`
+  ).join("")}</div>`;
+}
+
+function compareCard(d, winners) {
+  const c = d.c;
+  return `
+    <article class="compare-card">
+      <div class="compare-model-head">
+        <span class="m-dot" style="--c:${esc(d.meta.color)}"></span>
+        <div class="m-copy">
+          <div class="compare-provider">${esc(d.meta.label)}</div>
+          <h3>${esc(d.name)}</h3>
+          <p>${esc(d.m.id)}</p>
+        </div>
+      </div>
+      <div class="compare-total">${money(c.total)}<small>/mo</small></div>
+      <div class="compare-tags">${winnerTags(d, winners)}</div>
+      ${costStack(c)}
+      <dl class="compare-facts">
+        <div><dt>Context</dt><dd>${ctxFmt(d.m.context_length)}</dd></div>
+        <div><dt>Input</dt><dd>${perM(c.inR)}/M</dd></div>
+        <div><dt>Output</dt><dd>${perM(c.outR)}/M</dd></div>
+        <div><dt>Cache read</dt><dd>${c.hasCache ? `${perM(c.crR)}/M` : "input rate"}</dd></div>
+      </dl>
+      <div class="compare-breakdown">
+        <span>Fresh ${money(c.cIn)}</span>
+        <span>Output ${money(c.cOut)}</span>
+        <span>Cache ${money(c.cCr)}</span>
+      </div>
+      <button class="compare-remove" type="button" data-compare-remove="${esc(d.m.id)}">Remove</button>
+    </article>`;
+}
+
+function renderCompare(all) {
+  syncCompareWithCatalog(all);
+  const selected = selectedCompare(all);
+  const hasSelection = selected.length > 0;
+  const drawer = $("#compareDrawer");
+  const workspace = $("#compareWorkspace");
+  // The pinned drawer only earns its space while picking. Once the workspace is
+  // expanded it is redundant, and as a fixed element it floats over the cards'
+  // Remove buttons — so it stands down and the workspace owns the screen.
+  drawer.hidden = !hasSelection || compareOpen;
+  workspace.hidden = !(hasSelection && compareOpen);
+  document.body.classList.toggle("compare-active", hasSelection && !compareOpen);
+  if (!hasSelection) {
+    drawer.innerHTML = "";
+    workspace.innerHTML = "";
+    return;
+  }
+
+  const winners = compareWinners(selected);
+  drawer.innerHTML = `
+    <div class="compare-drawer-inner">
+      <div class="compare-drawer-main">
+        <div class="compare-eyebrow">${selected.length}/${MAX_COMPARE} pinned</div>
+        <div class="compare-drawer-summary">${compareSummary(selected, winners)}</div>
+        ${compareNotice ? `<div class="compare-notice">${esc(compareNotice)}</div>` : ""}
+      </div>
+      <div class="compare-pills">
+        ${selected.map(d => `
+          <button class="compare-pill" type="button" data-compare-remove="${esc(d.m.id)}" title="Remove ${esc(d.name)}">
+            <span class="m-dot" style="--c:${esc(d.meta.color)}"></span>${esc(d.name)}<span aria-hidden="true">×</span>
+          </button>`).join("")}
+      </div>
+      <div class="compare-actions">
+        <button class="btn-load compare-open" type="button" data-compare-action="open" ${selected.length < 2 ? "disabled" : ""}>Compare</button>
+        <button class="btn-reset" type="button" data-compare-action="clear">Clear</button>
+      </div>
+    </div>`;
+
+  if (!compareOpen) {
+    workspace.innerHTML = "";
+    return;
+  }
+
+  workspace.innerHTML = `
+    <div class="compare-head">
+      <div>
+        <p class="compare-cap">Pinned model comparison</p>
+        <h2>${selected.length} models, your usage</h2>
+        <p>${compareSummary(selected, winners)}</p>
+      </div>
+      <div class="compare-head-actions">
+        <button class="btn-reset" type="button" data-compare-action="close">Collapse</button>
+        <button class="btn-reset" type="button" data-compare-action="clear">Clear</button>
+      </div>
+    </div>
+    <div class="compare-card-grid">
+      ${selected.map(d => compareCard(d, winners)).join("")}
+    </div>`;
+}
+
 function row(d, scale) {
   const c = d.c;
   const w = costBarWidth(c.total, scale.lo, scale.hi);
   const free = c.inR === 0 && c.outR === 0;   // a $0 rate, not a $0 bill from zero usage
   const tier = tierOf(d.m);
   const id = esc(d.m.id), open = openId === d.m.id;
+  const pinned = compareIds.includes(d.m.id);
   const tags =
     (hasVision(d.m) ? '<span class="tag">vision</span>' : "") +
     (tier ? `<span class="tag" title="${esc(tierNote(tier))}">tiered</span>` : "") +
@@ -337,11 +536,16 @@ function row(d, scale) {
       <td>
         <div class="m-name">
           <span class="m-dot" style="--c:${esc(d.meta.color)}"></span>
-          <div>
+          <div class="m-copy">
             <div class="m-title">${esc(d.name)}${tags}</div>
             <div class="m-id">${id}</div>
             <div class="m-prov">${esc(d.meta.label)}</div>
           </div>
+          <button type="button" class="pin-btn ${pinned ? "on" : ""}" data-compare-id="${id}"
+                  aria-pressed="${pinned}"
+                  aria-label="${pinned ? "Remove from comparison" : "Add to comparison"}: ${esc(d.name)}">
+            <span aria-hidden="true">${pinned ? "✓" : "+"}</span>
+          </button>
         </div>
       </td>
       <td class="col-ctx">${ctxFmt(d.m.context_length)}</td>
@@ -517,6 +721,9 @@ function render() {
 
   $("#rows").innerHTML = list.map(d => row(d, scale)).join("");
   $("#empty").hidden = list.length > 0;
+  renderCompare(all);
+  renderDash(all);
+  persistState();
 
   // update usage summary line
   const totalTok = usage.input + usage.output + usage.cache_read + usage.cache_write;
@@ -577,11 +784,18 @@ function hitRate() {
 }
 
 // rebalance fresh/cached for a new hit rate, keeping total input fixed.
+// This freezes the current monthly numbers as the new base and drops scaling so
+// the split is literal — but if the data came from a shorter window (a real
+// 7-day report scaled ×4.29), that provenance vanishes silently. Record it so
+// the hint can say so instead of the multiplier just flipping to ×1.
+let periodDropped = 1;
 function applyHit(rate) {
   const total = usage.input + usage.cache_read;
   const cached = Math.round(total * rate);
-  base = { ...usage };                 // freeze current monthly numbers as the new base…
-  period.dataDays = period.projectDays;//  …and drop scaling so the split is literal
+  const s = periodScale();
+  if (Math.abs(s - 1) > 0.001) periodDropped = s;
+  base = { ...usage };
+  period.dataDays = period.projectDays;
   base.cache_read = cached;
   base.input = total - cached;
   recalcUsage();
@@ -593,9 +807,13 @@ function writeHitLabel() {
   $("#hitVal").textContent = share + "%";
   $("#hitSlider").style.setProperty("--fill", share + "%");
   $$("#hitPresets .hr-preset").forEach(b => b.classList.toggle("on", +b.dataset.hr === share));
+  // If a drag replaced a scaled projection, say what happened to the window.
+  const dropped = periodDropped > 1.001
+    ? ` <b>⚠</b> Your ${periodDropped.toFixed(2)}× projection was baked in — the figures above are now literal monthly counts.`
+    : "";
   $("#hitHint").innerHTML =
     `→ <b>${fmt(usage.cache_read)}</b> cached read · <b>${fmt(usage.input)}</b> fresh input / ${period.projectDays}-day mo. ` +
-    `Only changes cost for cache-capable models — Anthropic needs explicit cache breakpoints; OpenAI/Gemini/DeepSeek auto-cache.`;
+    `Only changes cost for cache-capable models — Anthropic needs explicit cache breakpoints; OpenAI/Gemini/DeepSeek auto-cache.` + dropped;
 }
 
 function writeHitRate() {            // full sync: also move the slider to match the data
@@ -644,6 +862,7 @@ function bindUsage() {
   $("#resetBtn").addEventListener("click", () => {
     base = { ...DEFAULTS };
     period = { dataDays: 30, projectDays: 30 };
+    periodDropped = 1;
     recalcUsage();
     writeFields();
     writePeriod();
@@ -751,53 +970,71 @@ function bindControls() {
     loadEndpoints(id).then(() => { if (openId === id) paintEndpoints(id); });
   };
   $("#rows").addEventListener("click", e => {
+    const pin = e.target.closest("[data-compare-id]");
+    if (pin) {                       // pinning must not also open the row's breakdown
+      e.stopPropagation();
+      toggleCompare(pin.dataset.compareId);
+      return;
+    }
     const tr = e.target.closest("tr.row"); if (tr) toggleRow(tr);
   });
   $("#rows").addEventListener("keydown", e => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target.closest("[data-compare-id]")) return;   // the button handles its own activation
     const tr = e.target.closest("tr.row"); if (!tr) return;
     e.preventDefault();
     toggleRow(tr);
   });
+
+  // pinned-model drawer + workspace (open / collapse / clear / remove)
+  const compareClick = e => {
+    const remove = e.target.closest("[data-compare-remove]");
+    if (remove) {
+      compareIds = compareIds.filter(id => id !== remove.dataset.compareRemove);
+      compareNotice = "";
+      render();
+      return;
+    }
+    const action = e.target.closest("[data-compare-action]");
+    if (!action) return;
+    if (action.dataset.compareAction === "open") {
+      compareOpen = true;
+      compareNotice = "";
+      render();
+      requestAnimationFrame(() => $("#compareWorkspace").scrollIntoView({
+        behavior: REDUCED && REDUCED.matches ? "auto" : "smooth", block: "start"
+      }));
+    } else if (action.dataset.compareAction === "close") {
+      compareOpen = false;
+      render();
+    } else if (action.dataset.compareAction === "clear") {
+      compareIds = [];
+      compareOpen = false;
+      compareNotice = "";
+      render();
+    }
+  };
+  $("#compareDrawer").addEventListener("click", compareClick);
+  $("#compareWorkspace").addEventListener("click", compareClick);
 }
 
-/* ---- Hermes Insights import ---------------------------------------------- */
+/* ---- usage import -------------------------------------------------------- */
 function setPasteMsg(text, isErr) {
   const el = $("#pasteMsg");
   el.textContent = text;
   el.classList.toggle("err", !!isErr);
 }
 
-function loadInsights() {
-  const text = $("#pasteArea").value;
-  const { total, inp, out, windowDays } = parseInsights(text);
-  if (total == null && inp == null && out == null) {
-    setPasteMsg("Couldn't find a “Tokens: … (in: … / out: …)” line — paste the full Insights block.", true);
-    return;
-  }
-  // "total − in − out = cached reads" only holds when we actually found in AND out.
-  // Without that split we can't tell cheap cached reads from full-price fresh input,
-  // and guessing "it's all cache" understates the bill by an order of magnitude — so
-  // bill everything that isn't known output as fresh input, and say so.
-  const knownSplit = inp != null && out != null;
-  if (knownSplit) {
-    base = {
-      input:       inp,
-      output:      out,
-      cache_read:  total != null ? Math.max(0, total - inp - out) : 0,
-      cache_write: 0
-    };
-  } else {
-    const o = out ?? 0;
-    base = {
-      input:       total != null ? Math.max(0, total - o) : (inp ?? 0),
-      output:      o,
-      cache_read:  0,
-      cache_write: 0
-    };
-  }
-  const haveWindow = windowDays != null;      // a detected "Last 0 hours" is not "no window"
-  period.dataDays = haveWindow ? Math.max(0.1, Math.round(windowDays * 100) / 100) : 30;
+function applyImportedUsage(parsed) {
+  base = {
+    input: parsed.input,
+    output: parsed.output,
+    cache_read: parsed.cache_read,
+    cache_write: parsed.cache_write
+  };
+  // A detected "Last 0 hours" is a window, not a missing one.
+  const haveWindow = parsed.windowDays != null;
+  period.dataDays = haveWindow ? Math.max(0.1, Math.round(parsed.windowDays * 100) / 100) : 30;
   period.projectDays = 30;
   recalcUsage();
   writeFields();
@@ -805,38 +1042,224 @@ function loadInsights() {
   writeHitRate();
   render();
   flashCosts();
+  persistState();
+
   const s = periodScale();
+  const srcLabel = parsed.source === "openclaw-json" ? "OpenClaw JSON"
+    : parsed.source === "openclaw" ? "OpenClaw /status"
+    : "Hermes Insights";
   const note = haveWindow
     ? `Detected a ${period.dataDays}-day window → scaled ×${(Math.round(s * 100) / 100)} to a 30-day month.`
     : `No “Last N days” line found — assuming ~30 days (no scaling).`;
-  const warn = knownSplit ? "" :
-    " ⚠ No “in: … / out: …” split found, so everything is costed as fresh input — set the cache hit rate below to model your real split.";
-  setPasteMsg(`Loaded ✓ ${note}  ${fmt(usage.input)} in · ${fmt(usage.output)} out · ${fmt(usage.cache_read)} cached / mo${warn}`, !knownSplit);
+  // "total − in − out = cached reads" only holds when the in/out split was real.
+  // Otherwise we can't tell cheap cached reads from full-price fresh input, and
+  // guessing "all cache" understates the bill by an order of magnitude.
+  const warn = parsed.knownSplit === false
+    ? " ⚠ No cache split found, so everything is costed as fresh input — set the cache hit rate below to model your real split."
+    : "";
+  setPasteMsg(`Loaded ✓ ${srcLabel} · ${note}  ${fmt(usage.input)} in · ${fmt(usage.output)} out · ${fmt(usage.cache_read)} cached / mo${warn}`, !parsed.knownSplit);
 }
 
-function bindPaste() {
+function loadImport() {
+  const text = $("#pasteArea").value;
+  const parsed = parseUsage(text, importSrc);
+  if (!parsed) {
+    const hint = importSrc === "hermes"
+      ? "Couldn't find a “Tokens: … (in: … / out: …)” line — paste the full Insights block."
+      : "Couldn't parse that — try /status (🧮 Tokens + 🗄️ Cache lines), a “↕️ in/out” footer, or usage.cost JSON.";
+    setPasteMsg(hint, true);
+    return;
+  }
+  applyImportedUsage(parsed);
+}
+
+function writeImportHint() {
+  const el = $("#importHint");
+  if (el) el.textContent = IMPORT_HINTS[importSrc] ?? "";
+  const ph = {
+    openclaw: "Paste OpenClaw /status output here.\n\n🧮 Tokens: 8.2m in / 2.1m out\n🗄️ Cache: 91% hit · 84m cached, 9m new\n\nAlso accepts /usage cost footers and usage.cost JSON.",
+    hermes: "Paste your Hermes Insights output here.\nThe line it reads is:  Tokens: 331,234,491 (in: 56,828,463 / out: 1,669,359)\n→ in = fresh input · out = output · (total − in − out) = cached reads.",
+    auto: "Paste any supported usage report — /status, /usage cost, JSON, or Hermes Insights."
+  }[importSrc];
+  if (ph) $("#pasteArea").placeholder = ph;
+}
+
+function bindImport() {
   $("#pasteToggle").addEventListener("click", () => {
     const box = $("#pasteBox");
     box.hidden = !box.hidden;
     $("#pasteToggle").setAttribute("aria-expanded", String(!box.hidden));
-    if (!box.hidden) $("#pasteArea").focus();
+    if (!box.hidden) { writeImportHint(); $("#pasteArea").focus(); }
   });
-  $("#pasteLoad").addEventListener("click", loadInsights);
+  $("#importTabs").addEventListener("click", e => {
+    const tab = e.target.closest(".import-tab"); if (!tab) return;
+    importSrc = tab.dataset.src;
+    $$("#importTabs .import-tab").forEach(t => {
+      const on = t === tab;
+      t.classList.toggle("on", on);
+      t.setAttribute("aria-selected", String(on));
+    });
+    writeImportHint();
+    persistState();
+  });
+  $("#pasteLoad").addEventListener("click", loadImport);
   $("#pasteArea").addEventListener("keydown", e => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); loadInsights(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); loadImport(); }
+  });
+  writeImportHint();
+}
+
+function applyPreset(preset, label) {
+  base = { ...preset };
+  period = { dataDays: 30, projectDays: 30 };
+  recalcUsage();
+  writeFields();
+  writePeriod();
+  writeHitRate();
+  render();
+  flashCosts();
+  persistState();
+  setPasteMsg(`Loaded ✓ ${label}`, false);
+}
+
+function bindPresets() {
+  $("#presetBtn").addEventListener("click", () => {
+    applyPreset(AGENT_PRESET, "heavy-agent preset — 8.2m in / 2.1m out / 84m cached reads / 9m writes");
+  });
+}
+
+/* ---- dashboard + persistence --------------------------------------------- */
+function renderDash(all) {
+  const dash = $("#dash");
+  if (!dash) return;
+  const paid = all.filter(d => isFinite(d.c.total) && d.c.total > 0)
+                  .sort((a, b) => a.c.total - b.c.total);
+  if (!paid.length) { dash.hidden = true; return; }
+  dash.hidden = false;
+
+  const cheapest = paid[0];
+  const priciest = paid[paid.length - 1];
+  const median = paid[Math.floor(paid.length / 2)];
+  const hr = Math.round(hitRate() * 100);
+  const cacheCapable = all.filter(d => d.c.hasCache).length;
+
+  $("#dashCheapest").innerHTML =
+    `<span class="dash-k">Cheapest</span><span class="dash-v">${money(cheapest.c.total)}<small>/mo</small></span>` +
+    `<span class="dash-s">${esc(cheapest.name)}</span>`;
+  $("#dashSpread").innerHTML =
+    `<span class="dash-k">Cost spread</span><span class="dash-v">${money(priciest.c.total - cheapest.c.total)}</span>` +
+    `<span class="dash-s">${money(cheapest.c.total)} → ${money(priciest.c.total)} across ${paid.length} models</span>`;
+  $("#dashCache").innerHTML =
+    `<span class="dash-k">Your cache hit</span><span class="dash-v">${hr}%</span>` +
+    `<span class="dash-s">${cacheCapable} of ${all.length} models support native caching</span>`;
+  $("#dashModels").innerHTML =
+    `<span class="dash-k">Median model</span><span class="dash-v">${money(median.c.total)}<small>/mo</small></span>` +
+    `<span class="dash-s">${all.length} priced models in the catalog</span>`;
+}
+
+/* State is saved twice on purpose: localStorage restores your own last visit,
+   and the URL hash is what a Share link carries. The hash wins on load so a
+   link someone sent you isn't overwritten by your own stale session. */
+function packState() {
+  return { base, period, filterProv, query, sortMode, compareIds, compareOpen, importSrc };
+}
+
+function unpackState(s) {
+  if (!s || typeof s !== "object") return;
+  if (s.base) base = { ...DEFAULTS, ...s.base };
+  if (s.period) period = { dataDays: 30, projectDays: 30, ...s.period };
+  if (s.filterProv) filterProv = s.filterProv;
+  if (typeof s.query === "string") query = s.query;
+  if (s.sortMode) sortMode = s.sortMode;
+  if (Array.isArray(s.compareIds)) compareIds = compareIds.concat(s.compareIds).slice(0, MAX_COMPARE);
+  if (typeof s.compareOpen === "boolean") compareOpen = s.compareOpen;
+  if (IMPORT_HINTS[s.importSrc]) importSrc = s.importSrc;
+}
+
+function persistState() {
+  if (suppressUrlWrite) return;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(packState())); } catch { /* private mode / quota */ }
+  writeUrl();
+}
+
+function loadPersistedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) unpackState(JSON.parse(raw));
+  } catch { /* corrupt entry — fall back to defaults */ }
+}
+
+function encodeUrlState() {
+  const parts = [
+    `u=${[base.input, base.output, base.cache_read, base.cache_write].join(",")}`,
+    `pd=${period.dataDays}`, `pp=${period.projectDays}`
+  ];
+  if (compareIds.length) parts.push(`c=${compareIds.map(encodeURIComponent).join(",")}`);
+  if (filterProv !== "all") parts.push(`p=${encodeURIComponent(filterProv)}`);
+  if (query) parts.push(`q=${encodeURIComponent(query)}`);
+  if (sortMode !== "cost-asc") parts.push(`s=${sortMode}`);
+  if (compareOpen) parts.push("co=1");
+  return "#" + parts.join("&");
+}
+
+function readUrlState() {
+  const hash = location.hash.replace(/^#/, "");
+  if (!hash) return false;
+  const params = new URLSearchParams(hash);
+  if (![...params.keys()].length) return false;
+  const u = params.get("u");
+  if (u) {
+    const [inp, out, cr, cw] = u.split(",").map(n => parseNum(n) || 0);
+    base = { input: inp, output: out, cache_read: cr, cache_write: cw };
+  }
+  if (params.has("pd")) period.dataDays = Math.max(0.1, parseNum(params.get("pd")) || 30);
+  if (params.has("pp")) period.projectDays = Math.max(0.1, parseNum(params.get("pp")) || 30);
+  if (params.has("c")) compareIds = params.get("c").split(",").filter(Boolean).slice(0, MAX_COMPARE);
+  if (params.has("p")) filterProv = params.get("p");
+  if (params.has("q")) { query = params.get("q"); $("#search").value = query; }
+  if (params.has("s")) { sortMode = params.get("s"); $("#sort").value = sortMode; }
+  compareOpen = params.has("co");
+  return true;
+}
+
+function writeUrl() {
+  if (suppressUrlWrite) return;
+  const next = encodeUrlState();
+  if (location.hash !== next) history.replaceState(null, "", location.pathname + location.search + next);
+}
+
+function bindShare() {
+  $("#shareBtn").addEventListener("click", async () => {
+    // location.origin is the literal string "null" on file:// — build from href
+    // so a locally opened page still produces a link that opens the same page.
+    const url = location.href.split("#")[0] + encodeUrlState();
+    try {
+      await navigator.clipboard.writeText(url);
+      setPasteMsg("Share link copied ✓ — it carries your usage, filters and pinned models.", false);
+    } catch {
+      prompt("Copy this link:", url);
+    }
   });
 }
 
 /* ---- boot ---------------------------------------------------------------- */
+// Restore before the first render: a hash first (a link someone sent you),
+// otherwise your own last session. Suppress writes until the restored state is
+// applied, or the restore itself would overwrite both stores.
+suppressUrlWrite = true;
+if (!readUrlState()) loadPersistedState();
 recalcUsage();
 writeFields();
 writePeriod();
 writeHitRate();
+suppressUrlWrite = false;
 bindUsage();
 bindPeriod();
 bindHit();
 bindControls();
-bindPaste();
+bindImport();
+bindPresets();
+bindShare();
 load(false);
 // quiet auto-refresh every 10 min — skipped while the tab is in the background…
 setInterval(() => { if (!document.hidden) load(false); }, REFRESH_MS);

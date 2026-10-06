@@ -131,6 +131,67 @@ test("parseInsights reads the Tokens line and the reporting window", () => {
   assert.deepEqual(E.parseInsights("nothing here"), { total: null, inp: null, out: null, windowDays: null });
 });
 
+test("parseInsights reads abbreviated totals — 8.2m is eight million, not eight", () => {
+  assert.equal(E.parseInsights("Tokens: 8.2m (in: 2.1m / out: 900k)").total, 8_200_000);
+  assert.equal(E.parseInsights("Tokens: 8.2m (in: 2.1m / out: 900k)").inp, 2_100_000);
+  assert.equal(E.parseInsights("Tokens: 8.2m (in: 2.1m / out: 900k)").out, 900_000);
+  // a total with no parentheses still parses
+  assert.equal(E.parseInsights("Tokens: 331.5m").total, 331_500_000);
+});
+
+test("parseOpenClaw reads /status lines, footers and usage.cost JSON", () => {
+  const status = E.parseOpenClaw("🧮 Tokens: 8.2m in / 2.1m out\n🗄️ Cache: 91% hit · 84m cached, 9m new\nLast 7 days");
+  assert.deepEqual(status, {
+    source: "openclaw", input: 8_200_000, output: 2_100_000,
+    cache_read: 84_000_000, cache_write: 9_000_000, windowDays: 7
+  });
+  // full comma-separated numbers, same shape
+  assert.equal(E.parseOpenClaw("🧮 Tokens: 8,200,000 in / 2,100,000 out").input, 8_200_000);
+  // /usage footer
+  const foot = E.parseOpenClaw("↕️ 8.2m/2.1m · Last 7 days");
+  assert.deepEqual([foot.input, foot.output, foot.windowDays], [8_200_000, 2_100_000, 7]);
+  // JSON with totals
+  const json = E.parseOpenClaw(JSON.stringify({ totals: { input: 5_000_000, output: 900_000, cacheRead: 40_000_000, cacheWrite: 3_000_000 }, days: 14 }));
+  assert.equal(json.source, "openclaw-json");
+  assert.deepEqual([json.input, json.output, json.cache_read, json.cache_write, json.windowDays],
+    [5_000_000, 900_000, 40_000_000, 3_000_000, 14]);
+  // nothing recognisable
+  assert.equal(E.parseOpenClaw("just prose"), null);
+  assert.equal(E.parseOpenClaw(""), null);
+});
+
+test("parseUsage picks a parser per source and flags a missing cache split", () => {
+  const ocBlock = "🧮 Tokens: 8.2m in / 2.1m out\n🗄️ Cache: 91% hit · 84m cached, 9m new\nLast 7 days";
+  const hermesBlock = "Hermes Insights — Last 7 days\nTokens: 331,234,491 (in: 56,828,463 / out: 1,669,359)";
+
+  // forced sources do what they say
+  assert.equal(E.parseUsage(ocBlock, "openclaw").source, "openclaw");
+  assert.equal(E.parseUsage(hermesBlock, "hermes").source, "hermes");
+  // Hermes tab on an OpenClaw block: the total parses, but there is no in/out
+  // split, so it must come back flagged rather than silently mis-costed.
+  const forced = E.parseUsage(ocBlock, "hermes");
+  assert.equal(forced.source, "hermes");
+  assert.equal(forced.knownSplit, false);
+  assert.equal(forced.cache_read, 0);          // nothing is assumed cached
+  assert.equal(forced.input, 8_200_000);       // …so the total bills as fresh input
+  assert.equal(E.parseUsage(hermesBlock, "openclaw"), null);
+
+  // auto prefers OpenClaw because it carries the cache split
+  const auto = E.parseUsage(ocBlock, "auto");
+  assert.equal(auto.source, "openclaw");
+  assert.equal(auto.cache_read, 84_000_000);
+  assert.equal(auto.knownSplit, true);
+
+  // hermes total minus in/out = cached reads
+  const h = E.parseUsage(hermesBlock, "hermes");
+  assert.equal(h.cache_read, 331_234_491 - 56_828_463 - 1_669_359);
+  assert.equal(h.knownSplit, true);
+
+  // total with no split → everything is fresh input, and knownSplit says so
+  const bare = E.parseUsage("Tokens: 1,000,000", "hermes");
+  assert.deepEqual([bare.input, bare.cache_read, bare.knownSplit], [1_000_000, 0, false]);
+});
+
 test("providerOf strips the alias tilde", () => {
   assert.equal(E.providerOf("anthropic/claude-fable-5.1"), "anthropic");
   assert.equal(E.providerOf("~openai/gpt-latest"), "openai");

@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0a09'/%3E%3Ctext x='16' y='23' font-size='21' text-anchor='middle' fill='%23f0c75e'%3E%E2%97%A7%3C/text%3E%3C/svg%3E" />
-<link rel="stylesheet" href="style.css?v=20260901b" />
+<link rel="stylesheet" href="style.css?v=20261006" />
 </head>
 <body>
 <div class="grain" aria-hidden="true"></div>
@@ -42,23 +42,37 @@
       OpenRouter quotes input, output, cache-read and cache-write separately — so the sticker price tells you
       almost nothing. Enter what you burn in a month and see the real bill on every frontier model.
     </p>
+    <div class="dash" id="dash" aria-label="Cost summary for your workload" hidden>
+      <div class="dash-card dash-cheapest" id="dashCheapest"></div>
+      <div class="dash-card dash-spread" id="dashSpread"></div>
+      <div class="dash-card dash-cache" id="dashCache"></div>
+      <div class="dash-card dash-models" id="dashModels"></div>
+    </div>
   </section>
 
   <section class="usage" id="usagePanel" aria-label="Your monthly usage">
     <div class="usage-head">
       <h2>Your monthly usage</h2>
       <div class="usage-actions">
-        <button class="btn-reset" id="pasteToggle" title="Paste your Hermes Insights block to auto-fill" aria-expanded="false" aria-controls="pasteBox">⎘ Load from Hermes Insights</button>
+        <button class="btn-reset" id="pasteToggle" title="Paste OpenClaw /status, /usage cost, or Hermes Insights" aria-expanded="false" aria-controls="pasteBox">⎘ Import usage</button>
+        <button class="btn-reset" id="presetBtn" title="A typical heavy-agent workload: bootstrap re-cache + heartbeat + tool loops">⚙ Heavy-agent preset</button>
+        <button class="btn-reset" id="shareBtn" title="Copy a shareable link carrying your usage, filters and pinned models">⛓ Share</button>
         <button class="btn-reset" id="resetBtn" title="Restore the sample figures">⤺ Reset</button>
       </div>
     </div>
     <div class="paste-box" id="pasteBox" hidden>
-      <textarea id="pasteArea" spellcheck="false" aria-label="Hermes Insights text"
-        placeholder="Paste your Hermes Insights output here.&#10;The line it reads is:  Tokens: 331,234,491 (in: 56,828,463 / out: 1,669,359)&#10;→ in = fresh input · out = output · (total − in − out) = cached reads."></textarea>
+      <div class="import-tabs" id="importTabs" role="tablist" aria-label="Import source">
+        <button type="button" class="import-tab on" data-src="openclaw" role="tab" aria-selected="true">OpenClaw</button>
+        <button type="button" class="import-tab" data-src="hermes" role="tab" aria-selected="false">Hermes</button>
+        <button type="button" class="import-tab" data-src="auto" role="tab" aria-selected="false">Auto-detect</button>
+      </div>
+      <textarea id="pasteArea" spellcheck="false" aria-label="Usage report to import"
+        placeholder="Paste OpenClaw /status output here.&#10;&#10;🧮 Tokens: 8.2m in / 2.1m out&#10;🗄️ Cache: 91% hit · 84m cached, 9m new&#10;&#10;Also accepts /usage cost footers and usage.cost JSON."></textarea>
       <div class="paste-row">
         <span class="paste-msg" id="pasteMsg"></span>
         <button class="btn-load" id="pasteLoad">Parse &amp; load ⏎</button>
       </div>
+      <p class="import-hint" id="importHint"></p>
     </div>
     <div class="usage-grid">
       <label class="field" data-kind="input">
@@ -115,6 +129,8 @@
 
   <section class="podium" id="podium" aria-label="Featured models"></section>
 
+  <section class="compare-workspace" id="compareWorkspace" aria-label="Pinned model comparison" hidden></section>
+
   <section class="controls">
     <div class="chips" id="chips" role="group" aria-label="Filter by provider"></div>
     <div class="controls-right">
@@ -166,8 +182,10 @@
   </footer>
 </main>
 
-<script src="engine.js?v=20260901b"></script>
-<script src="snapshot.js?v=20260901b"></script>
-<script src="app.js?v=20260901b"></script>
+<aside class="compare-drawer" id="compareDrawer" aria-label="Pinned models" hidden></aside>
+
+<script src="engine.js?v=20261006"></script>
+<script src="snapshot.js?v=20261006"></script>
+<script src="app.js?v=20261006"></script>
 </body>
 </html>

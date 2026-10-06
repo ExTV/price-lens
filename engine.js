@@ -57,7 +57,8 @@
     const raw = String(s).trim().toLowerCase();
     const mult = SUFFIX[raw.slice(-1)] || 1;
     const n = parseFloat((mult > 1 ? raw.slice(0, -1) : raw).replace(/[^0-9.]/g, ""));
-    return isFinite(n) && n >= 0 ? n * mult : 0;
+    // 8.2 * 1e6 is 8199999.999… in binary floating point — token counts are integers
+    return isFinite(n) && n >= 0 ? Math.round(n * mult) : 0;
   }
 
   /* ---- cost engine --------------------------------------------------------- */
@@ -201,24 +202,120 @@
     return 0;
   }
 
+  /* ---- usage import parsers ------------------------------------------------ */
+  // A reporting window, e.g. "Hermes Insights — Last 7 days" / "Last 24 hours" /
+  // "Last month". Returns days, or null when no window line is present.
+  function detectWindowDays(text) {
+    const w = String(text).match(/last\s+(\d+(?:\.\d+)?)?\s*(hour|day|week|month)/i);
+    if (!w) return null;
+    const n = w[1] == null ? 1 : parseFloat(w[1]), u = w[2].toLowerCase();
+    return u === "hour" ? n / 24 : u === "week" ? n * 7 : u === "month" ? n * 30 : n;
+  }
+
   /* ---- Hermes Insights parser ---------------------------------------------- */
   // Reads the "Tokens: <total> (in: <in> / out: <out>)" line from a pasted Insights block.
   function parseInsights(text) {
     text = String(text || "");
     const grab = re => { const m = text.match(re); return m ? parseNum(m[1]) : null; };
-    // reporting window, e.g. "Hermes Insights — Last 7 days" / "Last 24 hours" / "Last month"
-    const w = text.match(/last\s+(\d+(?:\.\d+)?)?\s*(hour|day|week|month)/i);
-    let windowDays = null;
-    if (w) {
-      const n = w[1] == null ? 1 : parseFloat(w[1]), u = w[2].toLowerCase();
-      windowDays = u === "hour" ? n / 24 : u === "week" ? n * 7 : u === "month" ? n * 30 : n;
-    }
     return {
-      total: grab(/tokens?:\s*([\d,\s]+?)\s*\(/i) ?? grab(/tokens?:\s*([\d,]+)/i),
-      inp:   grab(/\bin:\s*([\d,]+)/i),
-      out:   grab(/\bout:\s*([\d,]+)/i),
-      windowDays
+      // The total must allow decimals AND a k/m/b suffix: "Tokens: 8.2m" is eight
+      // million. Excluding the "." made every abbreviated block parse as a single
+      // digit; omitting the suffix made it parse as 8.
+      total: grab(/tokens?:\s*([\d.,\s]+?[kmb]?)\s*\(/i) ?? grab(/tokens?:\s*([\d.,]+\s*[kmb]?)/i),
+      inp:   grab(/\bin:\s*([\d.,]+\s*[kmb]?)/i),
+      out:   grab(/\bout:\s*([\d.,]+\s*[kmb]?)/i),
+      windowDays: detectWindowDays(text)
     };
+  }
+
+  /* ---- OpenClaw parser ----------------------------------------------------- */
+  // /status ("🧮 Tokens" + "🗄️ Cache" lines), /usage cost footers ("↕️ in/out"),
+  // and usage.cost JSON. Returns null when nothing recognisable is present.
+  function parseOpenClaw(text) {
+    const raw = String(text || "").trim();
+    if (!raw) return null;
+
+    if (raw.startsWith("{") || raw.startsWith("[")) {
+      try {
+        const j = JSON.parse(raw);
+        const totals = (j && (j.totals || j)) || {};
+        if (typeof totals.input === "number") {
+          return {
+            source: "openclaw-json",
+            input: totals.input,
+            output: totals.output ?? 0,
+            cache_read: totals.cacheRead ?? 0,
+            cache_write: totals.cacheWrite ?? 0,
+            windowDays: detectWindowDays(raw) ?? (typeof j.days === "number" ? j.days : null)
+          };
+        }
+      } catch { /* not JSON after all — fall through to the line parsers */ }
+    }
+
+    let inp = null, out = null, cache_read = 0, cache_write = 0;
+
+    const tokM = raw.match(/🧮\s*Tokens:\s*([^\n]+)/i)
+      ?? raw.match(/tokens:\s*([\d.,]+\s*[kmb]?\s*in\s*\/\s*[\d.,]+\s*[kmb]?\s*out)/i);
+    if (tokM) {
+      const pair = tokM[1].match(/([\d.,]+\s*[kmb]?)\s*in\s*\/\s*([\d.,]+\s*[kmb]?)\s*out/i);
+      if (pair) { inp = parseNum(pair[1]); out = parseNum(pair[2]); }
+    }
+
+    // "🗄️ Cache: 91% hit · 84m cached, 9m new" — cached reads and fresh writes
+    const cacheM = raw.match(/🗄[️]?\s*Cache:\s*(\d+)%\s*hit\s*[·•]\s*([\d.,]+\s*[kmb]?)\s*cached,\s*([\d.,]+\s*[kmb]?)\s*new/i);
+    if (cacheM) {
+      cache_read = parseNum(cacheM[2]);
+      cache_write = parseNum(cacheM[3]);
+    }
+
+    if (inp == null) {                                  // /usage full footer: "↕️ 8.2m/2.1m"
+      const footM = raw.match(/↕️?\s*([\d.,]+\s*[kmb]?)\s*\/\s*([\d.,]+\s*[kmb]?)/);
+      if (footM) { inp = parseNum(footM[1]); out = parseNum(footM[2]); }
+    }
+
+    const field = names => {
+      for (const n of names) {
+        const m = raw.match(new RegExp(`["']?${n}["']?\\s*[:=]\\s*([\\d.,]+)`, "i"));
+        if (m) return parseNum(m[1]);
+      }
+      return null;
+    };
+    if (inp == null) inp = field(["input", "inputTokens", "input_tokens", "prompt"]);
+    if (out == null) out = field(["output", "outputTokens", "output_tokens", "completion"]);
+    if (!cache_read) { const v = field(["cacheRead", "cache_read", "cached"]); if (v) cache_read = v; }
+    if (!cache_write) { const v = field(["cacheWrite", "cache_write"]); if (v) cache_write = v; }
+
+    if (inp == null && out == null && !cache_read && !cache_write) return null;
+    return {
+      source: "openclaw",
+      input: inp ?? 0, output: out ?? 0,
+      cache_read, cache_write,
+      windowDays: detectWindowDays(raw)
+    };
+  }
+
+  // Pick a parser for a pasted block. "openclaw"/"hermes" force one shape; "auto"
+  // tries OpenClaw first because its output carries the cache split, which Hermes
+  // Insights never does.
+  function parseUsage(text, src) {
+    const fromInsights = () => {
+      const h = parseInsights(text);
+      if (h.total == null && h.inp == null && h.out == null) return null;
+      const knownSplit = h.inp != null && h.out != null;
+      return {
+        source: "hermes",
+        input: knownSplit ? h.inp : (h.total != null ? Math.max(0, h.total - (h.out ?? 0)) : (h.inp ?? 0)),
+        output: h.out ?? 0,
+        cache_read: knownSplit ? Math.max(0, (h.total ?? 0) - h.inp - h.out) : 0,
+        cache_write: 0,
+        windowDays: h.windowDays,
+        knownSplit
+      };
+    };
+    if (src === "hermes") return fromInsights();
+    const oc = parseOpenClaw(text);
+    if (oc) return { ...oc, knownSplit: (oc.input || oc.output) > 0 || oc.cache_read > 0 };
+    return src === "openclaw" ? null : fromInsights();
   }
 
   return {
@@ -226,6 +323,6 @@
     rateOf, cost, tierOf, costBarWidth,
     providerOf, isTextModel, hasVision, isFreeTier, isRouter, isBatchVariant, isUncostable, pick,
     versionOf, cmpVersion,
-    parseInsights
+    detectWindowDays, parseInsights, parseOpenClaw, parseUsage
   };
 });

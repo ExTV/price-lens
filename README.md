@@ -47,8 +47,21 @@ every model.**
   caching changes the bill — only for models that actually support it.
 - **Period scaling.** Paste a "Last 7 days" usage report and it's scaled up to
   a real 30-day month automatically.
-- **Hermes Insights import.** Paste your Insights block and it auto-fills the
-  `Tokens: … (in: … / out: …)` figures.
+- **Usage import: OpenClaw, Hermes, or auto-detect.** Paste OpenClaw `/status`
+  (`🧮 Tokens` + `🗄️ Cache` lines), a `/usage` footer, `usage.cost` JSON, or a
+  Hermes Insights block, and the fields fill themselves — including the reporting
+  window. A block with no cache split is costed as fresh input and says so,
+  rather than guessing.
+- **Pinned comparison.** Pin up to four models from the table; a drawer summarises
+  them, and the comparison workspace prices them side by side against your usage
+  with cost stacks, rate facts and cheapest / largest-context / lowest-input
+  badges.
+- **Cost dashboard.** Cheapest paid model, the spread from cheapest to priciest,
+  your cache hit rate, and the median model — four figures about your workload.
+- **Share links + saved state.** Your usage, filters, sort and pinned models are
+  saved to `localStorage` and mirrored into the URL hash, so a Share link
+  reproduces exactly what you're looking at. A link in the URL wins over your own
+  saved session on load.
 - **Live + offline.** Pricing is fetched live from OpenRouter on load (and
   re-fetched every 10 minutes). If that request fails, it falls back to a
   bundled snapshot so the page always works.
@@ -126,3 +139,7 @@ template so we have what we need to act on it:
 
 > Not affiliated with OpenRouter. Pricing data comes from OpenRouter's public
 > models API.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

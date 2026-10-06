@@ -1,0 +1,9 @@
+# Local scratch / brainstorm tooling state
+.superpowers/
+
+# Node (tests run on the stdlib; no deps are installed, but guard anyway)
+node_modules/
+npm-debug.log*
+
+# OS noise
+.DS_Store
