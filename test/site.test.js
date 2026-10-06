@@ -31,15 +31,59 @@ test("snapshot.js is a filtered, priced catalog that pick() leaves unchanged", (
   assert.equal(new Set(ids).size, ids.length, "duplicate ids in snapshot");
 });
 
-test("index.html loads engine → snapshot → app with one shared ?v= version", () => {
+test("index.html loads engine → snapshot → icons → app with one shared ?v= version", () => {
   const html = read("index.html");
   const versions = [...html.matchAll(/\?v=([\w.-]+)/g)].map(m => m[1]);
-  assert.equal(versions.length, 4, "expected style.css + 3 scripts to be versioned");
+  assert.equal(versions.length, 5, "expected style.css + 4 scripts to be versioned");
   assert.equal(new Set(versions).size, 1, `mixed cache-bust versions: ${versions.join(", ")}`);
   const order = [...html.matchAll(/<script src="([\w.-]+)\?v=/g)].map(m => m[1]);
-  assert.deepEqual(order, ["engine.js", "snapshot.js", "app.js"]);
+  assert.deepEqual(order, ["engine.js", "snapshot.js", "icons.js", "app.js"]);
   assert.match(html, /http-equiv="Content-Security-Policy"/);
   assert.match(html, /connect-src https:\/\/openrouter\.ai/);
+});
+
+// icons.js is generated, so guard the two ways it can silently rot: a stale
+// build that no longer covers the committed snapshot, and markup that would
+// break when every symbol is concatenated into one sprite.
+test("icons.js covers every provider in the snapshot and is sprite-safe", () => {
+  const I = require("../icons.js");
+  const snap = loadSnapshot();
+  const slugs = new Set(snap.data.map(m => m.id.split("/")[0].replace(/^~/, "")));
+  for (const slug of slugs) {
+    const id = I.SLUG_TO_ID[slug];
+    if (!id) continue;                       // monogram fallback is legitimate
+    assert.ok(I.SYMBOLS[id], `icons.js maps ${slug} to ${id} but has no symbol`);
+  }
+  // every provider either has a logo or is a known monogram-only lab
+  const monogramOnly = new Set(["anthracite-org", "apodex", "gryphe", "inclusionai",
+    "mancer", "nex-agi", "prism-ml", "sao10k", "stealth", "thedrummer",
+    "thinkingmachines", "typesafe", "unbiased", "undi95", "writer"]);
+  for (const slug of slugs) {
+    assert.ok(I.SLUG_TO_ID[slug] || monogramOnly.has(slug),
+      `${slug} has neither a logo nor a monogram allowance — rebuild icons.js`);
+  }
+
+  const ids = Object.keys(I.SYMBOLS);
+  assert.ok(ids.length >= 40, `only ${ids.length} symbols — icon pack coverage regressed`);
+  const symbolIds = new Set();
+  for (const key of ids) {
+    const s = I.SYMBOLS[key];
+    assert.ok(s.startsWith("<symbol ") && s.endsWith("</symbol>"), `${key} is not a symbol`);
+    assert.match(s, /viewBox="[^"]+"/, `${key} has no viewBox`);
+    assert.ok(/fill="currentColor"/.test(s), `${key} is not monochrome`);
+    assert.ok(!/<title>/.test(s), `${key} carries a <title> that would surface as a tooltip`);
+    const id = (s.match(/<symbol id="([^"]+)"/) || [])[1];
+    assert.equal(id, `pl-${key}`, `${key} has the wrong symbol id`);
+    assert.ok(!symbolIds.has(id), `duplicate symbol id ${id}`);
+    symbolIds.add(id);
+    // inner ids must be unique across the whole sprite, or url(#…) refs cross-talk
+    const inner = s.slice(s.indexOf(">") + 1, s.lastIndexOf("</symbol>"));
+    for (const m of inner.matchAll(/\sid="([^"]+)"/g)) {
+      assert.ok(m[1].startsWith(`lobe-icons-${key}`), `${key} has an un-namespaced inner id ${m[1]}`);
+      assert.ok(!symbolIds.has(m[1]), `inner id collision: ${m[1]}`);
+      symbolIds.add(m[1]);
+    }
+  }
 });
 
 test("app.js only uses engine exports that exist", () => {

@@ -100,13 +100,15 @@ every model.**
 | `app.js`                   | State, data load, filtering/sorting, rendering                          |
 | `style.css`                | Theme and layout                                                        |
 | `snapshot.js`              | Offline fallback catalog (used only when the live fetch fails)          |
+| `icons.js`                 | Generated inline SVG sprite of provider brand marks (see below)         |
 | `tools/build-snapshot.mjs` | Regenerates `snapshot.js` from the live API with the same filters       |
+| `tools/build-icons.mjs`    | Regenerates `icons.js` from the vendored icon packs                     |
 | `test/`                    | `node --test` suites for the engine and for site consistency            |
 | `.github/workflows/`       | CI (tests on every push) and a weekly snapshot refresh                  |
 
 ## Running locally
 
-It's a plain static site, so either works:
+It's a plain static site — the page itself has **no runtime dependencies**, so either works:
 
 ```sh
 # just open the file
@@ -116,15 +118,30 @@ open index.html
 python3 -m http.server 8000   # then visit http://localhost:8000
 ```
 
-There are no dependencies to install. With Node 20+:
+With Node 20+, the dev tooling (tests, snapshot and icon rebuilds) installs two
+icon packs as **devDependencies** — nothing is shipped to the browser:
 
 ```sh
-npm test            # engine + site consistency tests
-npm run snapshot    # rebuild snapshot.js from the live catalog
+npm install           # dev-only: simple-icons + @lobehub/icons-static-svg
+npm test              # engine + site consistency tests
+npm run snapshot      # rebuild snapshot.js from the live catalog
+npm run icons         # rebuild icons.js from the icon packs
 ```
 
 The snapshot is also rebuilt every Monday by a GitHub Actions workflow, which
 commits only when the model data actually changed.
+
+## Provider logos
+
+Each model row, filter chip and card shows the provider's real brand mark instead
+of a coloured dot. `tools/build-icons.mjs` resolves every provider slug to the
+best available monochrome mark from `@lobehub/icons-static-svg` (purpose-built
+AI/LLM brand logos) or `simple-icons`, normalises it into an inline SVG `<symbol>`
+that inherits `currentColor`, and writes `icons.js`. The page injects that sprite
+once and references it with `<use>` — no image requests, and it stays inside the
+existing `img-src data:` CSP. Providers with no official vector logo (a handful of
+small labs) render as a letter monogram in their hue. Run `npm run icons` after
+adding a provider or updating the packs.
 
 ## Found a problem? Open a ticket
 

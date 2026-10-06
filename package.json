@@ -6,9 +6,14 @@
   "homepage": "https://extv.github.io/price-lens/",
   "scripts": {
     "test": "node --test",
-    "snapshot": "node tools/build-snapshot.mjs"
+    "snapshot": "node tools/build-snapshot.mjs",
+    "icons": "node tools/build-icons.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@lobehub/icons-static-svg": "^1.95.1",
+    "simple-icons": "^16.34.0"
   }
 }

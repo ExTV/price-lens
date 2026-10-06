@@ -85,6 +85,37 @@ function provMeta(prov) {
   return { label: PROV_LABEL[prov] || prov, color: PROV_HUE[prov] || "var(--dot)" };
 }
 
+/* ---- provider brand marks ------------------------------------------------
+   icons.js (built by tools/build-icons.mjs) carries an inline SVG sprite of
+   real company logos, monochrome so each inherits currentColor. Providers with
+   no official vector logo fall back to a letter monogram. Injected once, then
+   every row/chip references it with <use> — no image requests, CSP-safe. */
+const ICONS = (typeof window !== "undefined" && window.PriceLensIcons) || { SYMBOLS: {}, SLUG_TO_ID: {} };
+let spriteInjected = false;
+function injectSprite() {
+  if (spriteInjected) return;
+  spriteInjected = true;
+  const ids = Object.keys(ICONS.SYMBOLS);
+  if (!ids.length) return;
+  const wrap = document.createElement("div");
+  wrap.setAttribute("aria-hidden", "true");
+  wrap.setAttribute("style", "position:absolute;width:0;height:0;overflow:hidden");
+  wrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${ids.map(k => ICONS.SYMBOLS[k]).join("")}</svg>`;
+  document.body.prepend(wrap);
+}
+// A provider's logo (sprite <use>) or, when none exists, a letter monogram in
+// that provider's hue. gold=true paints the accent — active filter chip, pinned
+// rows/cards. Logos are monochrome and inherit currentColor; only the monogram
+// tiles use a hue, so the two read at the same weight.
+function providerIcon(prov, label, gold) {
+  const id = ICONS.SLUG_TO_ID[prov];
+  if (id && ICONS.SYMBOLS[id]) {
+    return `<svg class="m-icon${gold ? " gold" : ""}" aria-hidden="true"><use href="#pl-${id}"></use></svg>`;
+  }
+  const ch = (label || prov || "?").trim().charAt(0).toUpperCase();
+  return `<span class="m-icon m-mono${gold ? " gold" : ""}" style="--c:${esc(provMeta(prov).color)}" aria-hidden="true">${esc(ch)}</span>`;
+}
+
 /* ---- state --------------------------------------------------------------- */
 let MODELS = [];                       // raw {id,name,context_length,pricing}
 let LAST   = new Map();                // id → decorated row from the last render()
@@ -241,8 +272,8 @@ function renderChips(all) {
   // only providers actually present, busiest first (ties → label A–Z)
   const provs = Object.keys(counts).sort((a, b) =>
     counts[b] - counts[a] || provMeta(a).label.localeCompare(provMeta(b).label));
-  const items = [{ key: "all", label: "All", color: "var(--text)", n: all.length },
-    ...provs.map(k => ({ key: k, label: provMeta(k).label, color: provMeta(k).color, n: counts[k] }))];
+  const items = [{ key: "all", label: "All", color: "var(--text)", n: all.length, prov: null },
+    ...provs.map(k => ({ key: k, label: provMeta(k).label, color: provMeta(k).color, n: counts[k], prov: k }))];
   // if the active filter no longer matches any model, fall back to All
   if (filterProv !== "all" && !counts[filterProv]) filterProv = "all";
 
@@ -256,9 +287,11 @@ function renderChips(all) {
   }
   const chip = it => {
     const on = filterProv === it.key;
+    const mark = it.prov ? providerIcon(it.prov, it.label, on)
+                         : `<span class="m-icon m-all${on ? " gold" : ""}" aria-hidden="true">◧</span>`;
     return `
     <button type="button" class="chip ${on ? "active" : ""}" data-prov="${esc(it.key)}" aria-pressed="${on}">
-      <span class="dot" style="--c:${esc(it.color)}"></span>${esc(it.label)}<span class="cnt">${it.n}</span>
+      ${mark}${esc(it.label)}<span class="cnt">${it.n}</span>
     </button>`;
   };
   const more = tail.length
@@ -305,7 +338,7 @@ function renderFeatured(items) {
       <div class="pod ${best ? "pod-1" : ""}" data-id="${esc(d.m.id)}" role="button" tabindex="0"
            aria-label="${esc(i.label)}: ${money(c.total)} per month. Open its row in the table">
         <div class="pod-rank"><span class="pod-medal">★</span> featured${best ? `<span class="pod-flag">cheapest of ${costs.length}</span>` : ""}</div>
-        <div class="pod-prov"><span class="m-dot" style="--c:${esc(d.meta.color)};width:8px;height:8px"></span>${esc(d.meta.label)}</div>
+        <div class="pod-prov">${providerIcon(d.prov, d.meta.label, best)}${esc(d.meta.label)}</div>
         <h3 class="pod-name">${esc(i.label)}<span class="pod-id">${esc(d.m.id)}</span></h3>
         ${figure}${split}
       </div>`;
@@ -431,7 +464,7 @@ function compareCard(d, winners) {
   return `
     <article class="compare-card">
       <div class="compare-model-head">
-        <span class="m-dot" style="--c:${esc(d.meta.color)}"></span>
+        ${providerIcon(d.prov, d.meta.label, true)}
         <div class="m-copy">
           <div class="compare-provider">${esc(d.meta.label)}</div>
           <h3>${esc(d.name)}</h3>
@@ -485,7 +518,7 @@ function renderCompare(all) {
       <div class="compare-pills">
         ${selected.map(d => `
           <button class="compare-pill" type="button" data-compare-remove="${esc(d.m.id)}" title="Remove ${esc(d.name)}">
-            <span class="m-dot" style="--c:${esc(d.meta.color)}"></span>${esc(d.name)}<span aria-hidden="true">×</span>
+            ${providerIcon(d.prov, d.name, true)}${esc(d.name)}<span aria-hidden="true">×</span>
           </button>`).join("")}
       </div>
       <div class="compare-actions">
@@ -535,7 +568,7 @@ function row(d, scale) {
         aria-label="${esc(d.name)} — ${money(c.total)} per month; toggle cost breakdown">
       <td>
         <div class="m-name">
-          <span class="m-dot" style="--c:${esc(d.meta.color)}"></span>
+          ${providerIcon(d.prov, d.meta.label, pinned)}
           <div class="m-copy">
             <div class="m-title">${esc(d.name)}${tags}</div>
             <div class="m-id">${id}</div>
@@ -1264,6 +1297,7 @@ writeFields();
 writePeriod();
 writeHitRate();
 suppressUrlWrite = false;
+injectSprite();
 bindUsage();
 bindPeriod();
 bindHit();
