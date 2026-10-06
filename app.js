@@ -939,10 +939,21 @@ function bindControls() {
   // phones the bar is static, so it is never "stuck".
   const controls = $(".controls");
   let stuckTick = false;
+  // Hysteresis: collapsing the bar frees 95px, which can shove the bar's own
+  // pin point back under the scroll position. Pin at the bar's flow offset and
+  // release only 24px above it, so one scroll crosses the threshold once
+  // instead of ping-ponging across it every frame.
+  const STUCK_BAND = 24;
+  let stuckOn = false;
   const syncStuck = () => {
     stuckTick = false;
-    const pinned = getComputedStyle(controls).position === "sticky" && controls.getBoundingClientRect().top <= 0;
-    controls.classList.toggle("stuck", pinned);
+    const sticky = getComputedStyle(controls).position === "sticky";
+    const natural = controls.offsetTop;
+    const y = window.scrollY;
+    if (!sticky) stuckOn = false;
+    else if (stuckOn) { if (y < natural - STUCK_BAND) stuckOn = false; }
+    else if (y >= natural) stuckOn = true;
+    controls.classList.toggle("stuck", stuckOn);
   };
   const queueStuck = () => { if (!stuckTick) { stuckTick = true; requestAnimationFrame(syncStuck); } };
   addEventListener("scroll", queueStuck, { passive: true });

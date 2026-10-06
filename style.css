@@ -511,7 +511,15 @@ body.compare-active main { padding-bottom: 190px; }
   padding: 12px 0 14px; margin-bottom: 0;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
+  overflow-anchor: none;
 }
+/* The collapse below shrinks the bar 150px → 55px, which drags 95px of table
+   up. Chrome's scroll anchoring then compensates by pulling the scroll
+   position back 95px — un-pinning the bar, which re-expands it, which drags
+   the table up again. A slow swipe sits inside that band and flickers all the
+   way down the list. Opting the table out of anchoring makes the collapse
+   land once instead of oscillating. */
+.table-wrap { overflow-anchor: none; }
 /* Pinned to the top while scrolling, two wrapped chip rows plus the search row
    held ~150px of viewport. Collapse the chips to one scrolling row and keep
    search/sort beside them. */
