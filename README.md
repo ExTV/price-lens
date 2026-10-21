@@ -25,8 +25,9 @@ every model.**
   Only real, pinnable models: image- and audio-output models are excluded, as
   are `:free` tiers (their $0 sticker isn't a real price), `:batch` variants
   (the same model through the async batch queue at half price — a delivery
-  mode, not a model) and everything OpenRouter-specific — the `openrouter/*`
-  meta-routers and the `~vendor/x-latest` rolling aliases.
+  mode, not a model), task models you can't chat with (ScaleDown's summarize /
+  extract accept nothing but `max_tokens`) and everything OpenRouter-specific —
+  the `openrouter/*` meta-routers and the `~vendor/x-latest` rolling aliases.
 - **Upstream providers per model.** Expand any row to see every provider
   OpenRouter can route that model to — GLM 5.2 has 32 of them — each with its
   own input/output/cache rates, quantization, context, uptime and discount, and

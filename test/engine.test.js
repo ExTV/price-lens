@@ -229,6 +229,21 @@ test("pick keeps regular text models and slims them", () => {
   assert.equal(E.pick([with_({ architecture: undefined })]).length, 1);
 });
 
+test("pick drops task models that only take an output-length cap (summarize / extract)", () => {
+  // ScaleDown's utility models are text→text and priced, but the only knob they
+  // accept is max_tokens: nothing to chat with, so they are not chat completions.
+  assert.deepEqual(E.pick([
+    with_({ id: "scaledown/summarize", supported_parameters: ["max_tokens"] }),
+    with_({ id: "scaledown/extract",   supported_parameters: ["max_tokens", "max_completion_tokens"] })
+  ]), []);
+  // a reasoning model that drops temperature but keeps tools/reasoning is still chat
+  assert.equal(E.pick([with_({ id: "openai/o-model", supported_parameters: ["max_tokens", "reasoning", "tools"] })]).length, 1);
+  // the slimmed snapshot carries no supported_parameters at all → unknown keeps
+  assert.equal(E.pick([with_({ supported_parameters: undefined })]).length, 1);
+  assert.equal(E.pick([with_({ supported_parameters: [] })]).length, 1);
+  assert.equal(E.isTaskModel(with_({ supported_parameters: ["max_tokens"] })), true);
+});
+
 test("pick drops free tiers, routers, aliases, batch variants, media models and -1 pricing", () => {
   const dropped = [
     with_({ id: "lab/model-1:free" }),

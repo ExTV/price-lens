@@ -172,11 +172,21 @@
     return !isFinite(rateOf(p.prompt)) || !isFinite(rateOf(p.completion));
   }
 
+  // Task models (ScaleDown's summarize / extract and the like) are text→text and
+  // priced, but you cannot chat with them: the only parameter they accept is an
+  // output-length cap. A chat model exposes sampling, tool, reasoning or format
+  // controls. The slimmed snapshot carries no supported_parameters, so an absent
+  // or empty list is "unknown" and keeps the row.
+  function isTaskModel(m) {
+    const sp = m && m.supported_parameters;
+    return Array.isArray(sp) && sp.length > 0 && sp.every(p => /^max_(completion_)?tokens$/.test(String(p)));
+  }
+
   // "chat completions" = every priced, pinnable text→text LLM in the catalog.
   function pick(arr) {
     return arr
       .filter(m => m && typeof m.id === "string" && isTextModel(m) && !isFreeTier(m) &&
-                   !isRouter(m) && !isBatchVariant(m) && !isUncostable(m))
+                   !isRouter(m) && !isBatchVariant(m) && !isUncostable(m) && !isTaskModel(m))
       .map(x => ({
         id: x.id, name: x.name, context_length: x.context_length, pricing: x.pricing,
         architecture: {
@@ -321,7 +331,7 @@
   return {
     fmt, esc, money, perM, ctxFmt, parseNum,
     rateOf, cost, tierOf, costBarWidth,
-    providerOf, isTextModel, hasVision, isFreeTier, isRouter, isBatchVariant, isUncostable, pick,
+    providerOf, isTextModel, hasVision, isFreeTier, isRouter, isBatchVariant, isUncostable, isTaskModel, pick,
     versionOf, cmpVersion,
     detectWindowDays, parseInsights, parseOpenClaw, parseUsage
   };
