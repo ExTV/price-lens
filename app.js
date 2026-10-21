@@ -47,8 +47,9 @@ const IMPORT_HINTS = {
 // the card its short label; anything else is shown under its own name.
 const FEATURED = [
   { ids: ["anthropic/claude-fable-5.1"],                                              rx: /^anthropic\/claude-fable-[\d.]+$/,       label: "Fable 5.1" },
-  { ids: ["openai/gpt-6-sol"],                                                        rx: /^openai\/gpt-[\d.]+-sol$/,               label: "GPT-6 Sol" },
-  { ids: ["google/gemini-3.1-pro-preview", "google/gemini-3.1-pro-preview-customtools"], rx: /^google\/gemini-[\d.]+-pro(-preview)?$/, label: "Gemini 3.1 Pro" }
+  { ids: ["openai/gpt-6.1-sol"],                                                      rx: /^openai\/gpt-[\d.]+-sol$/,                        label: "GPT-6.1 Sol" },
+  // Gemini 4 renamed the flagship tier from "Pro" to "Argon"; keep matching both.
+  { ids: ["google/gemini-4-argon"],                                                   rx: /^google\/gemini-[\d.]+-(argon|pro)(-preview)?$/, label: "Gemini 4 Argon" }
 ];
 
 // Display labels for providers whose id segment isn't a readable name. Anything

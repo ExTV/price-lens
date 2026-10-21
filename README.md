@@ -34,7 +34,7 @@ every model.**
   rate is only the default; the spread between hosts is often 5–10×. Fetched on
   demand when you open a row, then cached.
 - **Featured podium.** The newest Claude Fable, GPT Sol and Gemini Pro
-  (today Fable 5.1, GPT-6 Sol and Gemini 3.1 Pro) costed against your usage,
+  (today Fable 5.1, GPT-6.1 Sol and Gemini 4 Argon) costed against your usage,
   with the cheapest highlighted, and a bar showing where the money goes.
   Click a card to jump to that model's row. A newer release of a family
   replaces the older one automatically, no repin needed.
