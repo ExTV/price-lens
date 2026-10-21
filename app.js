@@ -41,13 +41,15 @@ const IMPORT_HINTS = {
   auto:     "Tries OpenClaw formats first (they carry the cache split), then Hermes Insights."
 };
 
-// Always-shown hero trio: the newest release of each family (`rx` or a listed
+// Always-shown hero trio: each lab's *flagship* tier (Fable, GPT Astra, Gemini
+// Argon/Pro), resolved to the newest release of that family (`rx` or a listed
 // id). A pin used to win outright, so GPT-5.6 Sol stayed featured after GPT-6
 // Sol shipped. The listed ids now only break version ties, in order, and give
-// the card its short label; anything else is shown under its own name.
+// the card its short label; anything else is shown under its own name. Tier
+// variants (-pro reasoning modes, -preview-customtools) are excluded by the $.
 const FEATURED = [
   { ids: ["anthropic/claude-fable-5.1"],                                              rx: /^anthropic\/claude-fable-[\d.]+$/,       label: "Fable 5.1" },
-  { ids: ["openai/gpt-6.1-sol"],                                                      rx: /^openai\/gpt-[\d.]+-sol$/,                        label: "GPT-6.1 Sol" },
+  { ids: ["openai/gpt-6-astra"],                                                      rx: /^openai\/gpt-[\d.]+-astra$/,                      label: "GPT-6 Astra" },
   // Gemini 4 renamed the flagship tier from "Pro" to "Argon"; keep matching both.
   { ids: ["google/gemini-4-argon"],                                                   rx: /^google\/gemini-[\d.]+-(argon|pro)(-preview)?$/, label: "Gemini 4 Argon" }
 ];
