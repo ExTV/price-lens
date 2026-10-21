@@ -69,6 +69,8 @@ const ALIAS = {
   "launcher": null, "mancer": null, "nex-agi": null, "prism-ml": null,
   "sao10k": null, "stealth": null, "thedrummer": null, "thinkingmachines": null,
   "typesafe": null, "unbiased": null, "undi95": null, "writer": null,
+  // added with the 2026-10-19 snapshot refresh:
+  "elorian": null, "moondream": null, "reflection": null, "scaledown": null,
 };
 
 function readSvg(dir, base) {
