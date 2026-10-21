@@ -656,8 +656,12 @@ function epMarkup(id) {
     const quant = e.quantization && e.quantization !== "unknown" ? e.quantization : "";
     // One provider can list several endpoints — "openai/flex" (half price, slow),
     // "openai/fast" (2×), "azure/us" (regional, +10%). Without the variant they
-    // read as duplicate rows at different prices.
-    const variant = String(e.tag || "").split("/").slice(1).join("/");
+    // read as duplicate rows at different prices. Many hosts tag with the quant
+    // instead ("deepinfra/fp8"), which the quantization field already carries —
+    // showing both put "FP8 FP8" on every row, so a suffix that just repeats
+    // the quant is dropped.
+    const suffix = String(e.tag || "").split("/").slice(1).join("/");
+    const variant = suffix.toLowerCase() === quant.toLowerCase() ? "" : suffix;
     return `
       <tr class="${best ? "prov-best" : ""}">
         <td class="prov-nm">${esc(e.provider_name || e.name || "—")}${
