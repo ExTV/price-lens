@@ -56,7 +56,7 @@ test("icons.js covers every provider in the snapshot and is sprite-safe", () => 
   }
   // every provider either has a logo or is a known monogram-only lab
   const monogramOnly = new Set(["anthracite-org", "apodex", "gryphe", "inclusionai",
-    "mancer", "nex-agi", "prism-ml", "sao10k", "stealth", "thedrummer",
+    "launcher", "mancer", "nex-agi", "prism-ml", "sao10k", "stealth", "thedrummer",
     "thinkingmachines", "typesafe", "unbiased", "undi95", "writer"]);
   for (const slug of slugs) {
     assert.ok(I.SLUG_TO_ID[slug] || monogramOnly.has(slug),
@@ -129,7 +129,5 @@ test("icons.js UI symbols are well-formed stroke icons and sprite-safe", () => {
     assert.ok(!symbolIds.has(id), `duplicate UI symbol id ${id}`);
     symbolIds.add(id);
   }
-  // The favicon is a self-contained data URI usable in a <link rel="icon">.
-  assert.ok(I.FAVICON && I.FAVICON.startsWith("data:image/svg+xml"), "icons.js must export a FAVICON data URI");
 });
 

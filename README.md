@@ -102,7 +102,7 @@ every model.**
 | `snapshot.js`              | Offline fallback catalog (used only when the live fetch fails)          |
 | `icons.js`                 | Generated inline SVG sprite of provider brand marks (see below)         |
 | `tools/build-snapshot.mjs` | Regenerates `snapshot.js` from the live API with the same filters       |
-| `tools/build-icons.mjs`    | Regenerates `icons.js` from the vendored icon packs                     |
+| `tools/build-icons.mjs`    | Regenerates `icons.js` from the npm icon packs                          |
 | `test/`                    | `node --test` suites for the engine and for site consistency            |
 | `.github/workflows/`       | CI (tests on every push) and a weekly snapshot refresh                  |
 
@@ -118,11 +118,11 @@ open index.html
 python3 -m http.server 8000   # then visit http://localhost:8000
 ```
 
-With Node 20+, the dev tooling (tests, snapshot and icon rebuilds) installs two
+With Node 20+, the dev tooling (tests, snapshot and icon rebuilds) installs three
 icon packs as **devDependencies** — nothing is shipped to the browser:
 
 ```sh
-npm install           # dev-only: simple-icons + @lobehub/icons-static-svg
+npm install           # dev-only: @lobehub/icons-static-svg, simple-icons, lucide-static
 npm test              # engine + site consistency tests
 npm run snapshot      # rebuild snapshot.js from the live catalog
 npm run icons         # rebuild icons.js from the icon packs
@@ -140,8 +140,14 @@ AI/LLM brand logos) or `simple-icons`, normalises it into an inline SVG `<symbol
 that inherits `currentColor`, and writes `icons.js`. The page injects that sprite
 once and references it with `<use>` — no image requests, and it stays inside the
 existing `img-src data:` CSP. Providers with no official vector logo (a handful of
-small labs) render as a letter monogram in their hue. Run `npm run icons` after
-adding a provider or updating the packs.
+small labs) render as a neutral letter monogram. The interface glyphs (search,
+share, pin, …) come from the same sprite via `lucide-static`. Run `npm run icons`
+after adding a provider or updating the packs.
+
+Icon sources: [`@lobehub/icons-static-svg`](https://github.com/lobehub/lobe-icons)
+(MIT), [`simple-icons`](https://github.com/simple-icons/simple-icons) (CC0 — the
+marks themselves remain their owners' trademarks) and
+[`lucide`](https://github.com/lucide-icons/lucide) (ISC).
 
 ## Found a problem? Open a ticket
 

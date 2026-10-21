@@ -66,23 +66,8 @@ const PROV_LABEL = {
   thinkingmachines: "Thinking Machines", "aion-labs": "AionLabs"
 };
 
-// Only the busiest labs get a hue. Thirty near-identical brand colours told
-// nobody anything at 9px (Google vs Microsoft was ΔE 2.9); these eight sit at
-// least ΔE 27 apart. Everyone else shares the neutral dot and the label
-// carries the identity.
-const PROV_HUE = {
-  openai:       "#2bcf8d",
-  qwen:         "#b197ff",
-  google:       "#6aa6f7",
-  anthropic:    "#e08a63",
-  mistralai:    "#f5b431",
-  deepseek:     "#4d6bfe",
-  "z-ai":       "#ff6b9d",
-  "meta-llama": "#38c8d4",
-  meta:         "#38c8d4"
-};
 function provMeta(prov) {
-  return { label: PROV_LABEL[prov] || prov, color: PROV_HUE[prov] || "var(--dot)" };
+  return { label: PROV_LABEL[prov] || prov };
 }
 
 /* ---- provider brand marks ------------------------------------------------
@@ -97,17 +82,16 @@ const ICONS = (typeof window !== "undefined" && window.PriceLensIcons) || { SYMB
 function uiIcon(name, cls) {
   return `<svg class="ico${cls ? " " + cls : ""}" aria-hidden="true"><use href="#ui-${name}"></use></svg>`;
 }
-// A provider's logo (sprite <use>) or, when none exists, a letter monogram in
-// that provider's hue. gold=true paints the accent — active filter chip, pinned
-// rows/cards. Logos are monochrome and inherit currentColor; only the monogram
-// tiles use a hue, so the two read at the same weight.
+// A provider's logo (sprite <use>) or, when none exists, a neutral letter
+// monogram tile. gold=true paints the accent — pinned rows/cards. Both are
+// monochrome and inherit currentColor, so the two read at the same weight.
 function providerIcon(prov, label, gold) {
   const id = ICONS.SLUG_TO_ID[prov];
   if (id && ICONS.SYMBOLS[id]) {
     return `<svg class="m-icon${gold ? " gold" : ""}" aria-hidden="true"><use href="#pl-${id}"></use></svg>`;
   }
   const ch = (label || prov || "?").trim().charAt(0).toUpperCase();
-  return `<span class="m-icon m-mono${gold ? " gold" : ""}" style="--c:${esc(provMeta(prov).color)}" aria-hidden="true">${esc(ch)}</span>`;
+  return `<span class="m-icon m-mono${gold ? " gold" : ""}" aria-hidden="true">${esc(ch)}</span>`;
 }
 
 /* ---- state --------------------------------------------------------------- */
@@ -266,8 +250,8 @@ function renderChips(all) {
   // only providers actually present, busiest first (ties → label A–Z)
   const provs = Object.keys(counts).sort((a, b) =>
     counts[b] - counts[a] || provMeta(a).label.localeCompare(provMeta(b).label));
-  const items = [{ key: "all", label: "All", color: "var(--text)", n: all.length, prov: null },
-    ...provs.map(k => ({ key: k, label: provMeta(k).label, color: provMeta(k).color, n: counts[k], prov: k }))];
+  const items = [{ key: "all", label: "All", n: all.length, prov: null },
+    ...provs.map(k => ({ key: k, label: provMeta(k).label, n: counts[k], prov: k }))];
   // if the active filter no longer matches any model, fall back to All
   if (filterProv !== "all" && !counts[filterProv]) filterProv = "all";
 
@@ -281,8 +265,10 @@ function renderChips(all) {
   }
   const chip = it => {
     const on = filterProv === it.key;
-    const mark = it.prov ? providerIcon(it.prov, it.label, on)
-                         : `<svg class="m-icon ico${on ? " gold" : ""}" aria-hidden="true"><use href="#ui-all"></use></svg>`;
+    // The active chip's cream fill paints its mark in ink via CSS
+    // (.chip.active .m-icon); gold on cream would sit at 1.3:1.
+    const mark = it.prov ? providerIcon(it.prov, it.label, false)
+                         : `<svg class="m-icon ico" aria-hidden="true"><use href="#ui-all"></use></svg>`;
     return `
     <button type="button" class="chip ${on ? "active" : ""}" data-prov="${esc(it.key)}" aria-pressed="${on}">
       ${mark}${esc(it.label)}<span class="cnt">${it.n}</span>
@@ -512,7 +498,7 @@ function renderCompare(all) {
       <div class="compare-pills">
         ${selected.map(d => `
           <button class="compare-pill" type="button" data-compare-remove="${esc(d.m.id)}" title="Remove ${esc(d.name)}">
-            ${providerIcon(d.prov, d.name, true)}${esc(d.name)}${uiIcon("close", "pill-x")}
+            ${providerIcon(d.prov, d.meta.label, true)}${esc(d.name)}${uiIcon("close", "pill-x")}
           </button>`).join("")}
       </div>
       <div class="compare-actions">
@@ -966,16 +952,18 @@ function bindControls() {
   // phones the bar is static, so it is never "stuck".
   const controls = $(".controls");
   let stuckTick = false;
-  // Hysteresis: collapsing the bar frees 95px, which can shove the bar's own
-  // pin point back under the scroll position. Pin at the bar's flow offset and
-  // release only 24px above it, so one scroll crosses the threshold once
-  // instead of ping-ponging across it every frame.
+  // Hysteresis: pin once the page has scrolled to the bar's flow position and
+  // release only 24px above it, so a slow scroll crosses the threshold once
+  // instead of ping-ponging across it every frame. offsetTop is relative to
+  // the offsetParent (<main> is positioned, ~70px below the document top), so
+  // walk the chain to get a document-space offset comparable to scrollY.
   const STUCK_BAND = 24;
   let stuckOn = false;
+  const flowTop = el => { let y = 0; for (let n = el; n; n = n.offsetParent) y += n.offsetTop; return y; };
   const syncStuck = () => {
     stuckTick = false;
     const sticky = getComputedStyle(controls).position === "sticky";
-    const natural = controls.offsetTop;
+    const natural = flowTop(controls);
     const y = window.scrollY;
     if (!sticky) stuckOn = false;
     else if (stuckOn) { if (y < natural - STUCK_BAND) stuckOn = false; }
@@ -1276,7 +1264,10 @@ function readUrlState() {
 function writeUrl() {
   if (suppressUrlWrite) return;
   const next = encodeUrlState();
-  if (location.hash !== next) history.replaceState(null, "", location.pathname + location.search + next);
+  if (location.hash === next) return;
+  // Safari rate-limits replaceState (100 calls / 30 s) and throws past it; a
+  // slider drag can get there, and a stale hash beats a render() that dies.
+  try { history.replaceState(null, "", location.pathname + location.search + next); } catch { /* keep the old hash */ }
 }
 
 function bindShare() {
@@ -1304,7 +1295,6 @@ writeFields();
 writePeriod();
 writeHitRate();
 suppressUrlWrite = false;
-if (ICONS.inject) ICONS.inject();   // idempotent; icons.js already self-injects
 bindUsage();
 bindPeriod();
 bindHit();

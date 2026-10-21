@@ -2,7 +2,7 @@
 // Two inline SVG sprites in one file:
 //   SYMBOLS  provider brand marks (monochrome, inherit currentColor)
 //   UI       interface icons from lucide-static (stroke system, currentColor)
-// Source catalog: live. 43/57 providers have a logo;
+// Source catalog: snapshot + live. 43/62 providers have a logo;
 // the rest render as a letter monogram in app.js.
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -123,10 +123,7 @@
   UI["reset"] = "<symbol id=\"ui-reset\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" /> <path d=\"M3 3v5h5\" /></symbol>";
   UI["search"] = "<symbol id=\"ui-search\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m21 21-4.34-4.34\" /> <circle cx=\"11\" cy=\"11\" r=\"8\" /></symbol>";
   UI["share"] = "<symbol id=\"ui-share\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\" /> <path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\" /></symbol>";
-  UI["sort"] = "<symbol id=\"ui-sort\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m21 16-4 4-4-4\" /> <path d=\"M17 20V4\" /> <path d=\"m3 8 4-4 4 4\" /> <path d=\"M7 4v16\" /></symbol>";
   UI["star"] = "<symbol id=\"ui-star\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z\" /></symbol>";
-
-  var FAVICON = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%230b0a09%22%2F%3E%3Cg%20transform%3D%22translate(4%204)%22%20fill%3D%22none%22%20stroke%3D%22%23f0c75e%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207V5a2%202%200%200%201%202-2h2%22%20%2F%3E%20%3Cpath%20d%3D%22M17%203h2a2%202%200%200%201%202%202v2%22%20%2F%3E%20%3Cpath%20d%3D%22M21%2017v2a2%202%200%200%201-2%202h-2%22%20%2F%3E%20%3Cpath%20d%3D%22M7%2021H5a2%202%200%200%201-2-2v-2%22%20%2F%3E%20%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22%20%2F%3E%20%3Cpath%20d%3D%22m16%2016-1.9-1.9%22%20%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E";
 
   // Inject both sprites once into the document (aria-hidden, zero-size) so any
   // <use href="#pl-…"> or <use href="#ui-…"> resolves. Safe to call repeatedly.
@@ -146,5 +143,5 @@
   // page paints, so static header glyphs never flash empty.
   try { inject(); } catch (e) {}
 
-  return { SYMBOLS: SYMBOLS, SLUG_TO_ID: SLUG_TO_ID, UI: UI, FAVICON: FAVICON, inject: inject };
+  return { SYMBOLS: SYMBOLS, SLUG_TO_ID: SLUG_TO_ID, UI: UI, inject: inject };
 });

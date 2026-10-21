@@ -4,7 +4,7 @@
 
    Colour rules: gold means money and nothing else — cost figures, the cheapest
    marker, the cost bar. Selection, focus and hover use the cream text tone.
-   Provider hues belong to the eight busiest labs; everyone else shares --dot.
+   Provider marks are monochrome logos (or a neutral monogram tile) on currentColor.
    Type: nine sizes from a token scale, 11px floor; sentences in Plex Sans,
    figures and ids in Plex Mono.
    ========================================================================= */
@@ -22,7 +22,6 @@
   --text:        #ece6da;
   --dim:         #a39c8f;
   --faint:       #868073;   /* AA against --bg and --bg-2 at body sizes (5.0:1 / 4.9:1) */
-  --dot:         #7d7669;   /* neutral provider dot, 4.4:1 against --bg */
 
   --gold:        #f0c75e;
   --gold-bright: #ffdc86;
@@ -111,7 +110,6 @@ main { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; paddin
 }
 /* Icons living inside a provider-mark slot (the "All" chip) render at logo size. */
 .m-icon.ico { width: 16px; height: 16px; stroke-width: 1.9; color: var(--faint); }
-.m-icon.ico.gold { color: var(--gold); }
 
 /* ---- topbar -------------------------------------------------------------- */
 .topbar {
@@ -569,7 +567,7 @@ body.compare-active main { padding-bottom: 190px; }
 }
 .chip:hover { color: var(--text); }
 .chip .m-icon { width: 16px; height: 16px; }
-.chip.active .m-icon { color: var(--gold); }
+.chip.active .m-icon { color: var(--bg); }   /* ink on the cream fill; gold would sit at 1.3:1 */
 .chip .cnt { color: var(--faint); font-size: var(--fs-xs); }
 .chip.active { color: var(--bg); background: var(--text); border-color: var(--text); }
 .chip.active .cnt { color: rgba(11,10,9,0.75); }   /* 8.2:1 on the cream fill */
@@ -623,26 +621,27 @@ tbody tr.row:hover { background: var(--surface-2); }
 tbody tr.row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--text); background: var(--surface-2); }
 tbody td { padding: 9px 16px; vertical-align: middle; }
 
-/* name cell: dot · copy · pin. The copy column is the only flexible one, so a
+/* name cell: mark · copy · pin. The copy column is the only flexible one, so a
    long model name wraps instead of pushing the pin out of the row. */
 .m-name { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; }
 .m-copy { min-width: 0; }
 /* provider mark: a real company logo (sprite <use>, monochrome so it inherits
-   currentColor) or, where no official logo exists, a letter monogram in that
-   provider's hue. Resting at --dim so 335 rows stay quiet; --text on hover;
-   --gold when the provider is the active filter or the model is pinned. */
+   currentColor) or, where no official logo exists, a neutral letter monogram
+   tile. Resting at --dim so 335 rows stay quiet; --text on hover; --gold when
+   the model is pinned. */
 .m-icon { width: 18px; height: 18px; flex: none; color: var(--dim); display: block; }
 .m-icon.gold { color: var(--gold); }
-tbody tr.row:hover .m-icon { color: var(--text); }
-/* monogram fallback: a rounded tile carrying the provider's initial in its hue */
+tbody tr.row:hover .m-icon:not(.gold) { color: var(--text); }
+/* monogram fallback: a rounded tile carrying the provider's initial, tinted
+   from currentColor so it follows the same resting/hover/gold/active states
+   as the logos without extra rules */
 .m-icon.m-mono {
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 5px; font-family: var(--mono); font-size: 11px; font-weight: 600;
-  line-height: 1; color: var(--c, var(--dim));
-  background: color-mix(in srgb, var(--c, var(--dim)) 16%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--dim)) 34%, transparent);
+  line-height: 1;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 34%, transparent);
 }
-.m-icon.m-mono.gold { color: var(--gold); background: rgba(240,199,94,0.14); box-shadow: inset 0 0 0 1px rgba(240,199,94,0.4); }
 .m-title { font-weight: 600; font-size: var(--fs-lg); line-height: 1.25; letter-spacing: -0.005em; }
 .m-id { font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.3; color: var(--faint); margin-top: 2px; }
 .m-prov { display: none; font-size: var(--fs-xs); line-height: 1.3; color: var(--faint); margin-top: 2px; }
@@ -802,7 +801,7 @@ tr.detail.open .detail-inner { max-height: 620px; opacity: 1; padding: 14px 0 16
   #grid > thead > tr > th:nth-child(4), #rows > tr > td.out-col,
   #grid > thead > tr > th:nth-child(5), #rows > tr > td.cache-col { display: none; }
   .m-id { display: none; }
-  .m-prov { display: block; }                            /* a dot alone can't name the lab */
+  .m-prov { display: block; }                            /* a mark alone can't name the lab */
   .m-title .tag { display: none; }                       /* names stay short on tiny screens */
   #grid > thead > tr > th { white-space: normal; }  /* let "Your monthly cost" wrap */
   /* Row cells only. The same rule on every td used to pad the collapsed

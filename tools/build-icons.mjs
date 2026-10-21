@@ -31,7 +31,6 @@ const UI_ICONS = {
   preset: "bot",                   // the preset is a heavy *agent* workload
   share: "link",
   reset: "rotate-ccw",
-  sort: "arrow-up-down",
   all: "layout-grid",              // the "All providers" chip
   star: "star",
   plus: "plus",
@@ -144,17 +143,24 @@ function toUiSymbol(alias, lucideName) {
 }
 
 async function providerSlugs() {
+  // Always cover the committed snapshot's providers — the offline page and
+  // test/site.test.js need every one of them — and add whatever the live
+  // catalog has gained since, so the sprite is a superset of both and a
+  // rebuild never drops a provider the snapshot still lists.
+  const w = {};
+  new Function("window", readFileSync(path.join(root, "snapshot.js"), "utf8"))(w);
+  const slugs = new Set(w.OR_SNAPSHOT.data.map(m => m.id.split("/")[0].replace(/^~/, "")));
+  let source = "snapshot";
   try {
     const r = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(15000) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const j = await r.json();
-    return { slugs: [...new Set(j.data.map(m => m.id.split("/")[0]).map(s => s.replace(/^~/, "")))], source: "live" };
+    for (const m of j.data) slugs.add(m.id.split("/")[0].replace(/^~/, ""));
+    source = "snapshot + live";
   } catch (e) {
-    // Offline / CI: fall back to the committed snapshot so the build is reproducible.
-    const w = {};
-    new Function("window", readFileSync(path.join(root, "snapshot.js"), "utf8"))(w);
-    return { slugs: [...new Set(w.OR_SNAPSHOT.data.map(m => m.id.split("/")[0].replace(/^~/, "")))], source: "snapshot (" + e.message + ")" };
+    console.warn(`live catalog unavailable (${e.message}); building from the snapshot alone`);
   }
+  return { slugs: [...slugs], source };
 }
 
 const { slugs, source } = await providerSlugs();
@@ -179,7 +185,8 @@ for (const [name, lucideName] of Object.entries(UI_ICONS)) {
 }
 
 // Favicon = the brand mark on the site's ink background, as a data URI so it
-// needs no extra file and stays inside the CSP (img-src data:).
+// needs no extra file and stays inside the CSP (img-src data:). It is pasted
+// into index.html's <link rel="icon"> by hand, so it is printed, not shipped.
 const brandPaths = uiSymbols.brand.replace(/^<symbol[^>]*>/, "").replace(/<\/symbol>$/, "");
 const FAVICON = "data:image/svg+xml," + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#0b0a09"/><g transform="translate(4 4)" fill="none" stroke="#f0c75e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${brandPaths}</g></svg>`
@@ -207,8 +214,6 @@ ${[...symbols.keys()].sort().map(id => `  SYMBOLS[${JSON.stringify(id)}] = ${JSO
   var UI = {};
 ${Object.keys(uiSymbols).sort().map(name => `  UI[${JSON.stringify(name)}] = ${JSON.stringify(uiSymbols[name])};`).join("\n")}
 
-  var FAVICON = ${JSON.stringify(FAVICON)};
-
   // Inject both sprites once into the document (aria-hidden, zero-size) so any
   // <use href="#pl-…"> or <use href="#ui-…"> resolves. Safe to call repeatedly.
   var injected = false;
@@ -227,10 +232,11 @@ ${Object.keys(uiSymbols).sort().map(name => `  UI[${JSON.stringify(name)}] = ${J
   // page paints, so static header glyphs never flash empty.
   try { inject(); } catch (e) {}
 
-  return { SYMBOLS: SYMBOLS, SLUG_TO_ID: SLUG_TO_ID, UI: UI, FAVICON: FAVICON, inject: inject };
+  return { SYMBOLS: SYMBOLS, SLUG_TO_ID: SLUG_TO_ID, UI: UI, inject: inject };
 });
 `;
 
 writeFileSync(path.join(root, "icons.js"), out);
 console.log(`icons.js: ${symbols.size} symbols covering ${covered}/${slugs.length} providers (${source}).`);
 console.log(`monogram fallback for: ${monogram.join(", ")}`);
+console.log(`favicon data URI for index.html <link rel="icon">:\n${FAVICON}`);
