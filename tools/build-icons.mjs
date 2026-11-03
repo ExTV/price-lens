@@ -71,6 +71,7 @@ const ALIAS = {
   "typesafe": null, "unbiased": null, "undi95": null, "writer": null,
   // added with the 2026-10-19 snapshot refresh:
   "elorian": null, "moondream": null, "reflection": null, "scaledown": null,
+  "particle-ai": null, "recursive": null, "xingchen-agi": null,
 };
 
 function readSvg(dir, base) {

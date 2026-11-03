@@ -58,7 +58,8 @@ test("icons.js covers every provider in the snapshot and is sprite-safe", () => 
   const monogramOnly = new Set(["anthracite-org", "apodex", "gryphe", "inclusionai",
     "launcher", "mancer", "nex-agi", "prism-ml", "sao10k", "stealth", "thedrummer",
     "thinkingmachines", "typesafe", "unbiased", "undi95", "writer",
-    "elorian", "moondream", "reflection", "scaledown"]);
+    "elorian", "moondream", "reflection", "scaledown",
+    "particle-ai", "recursive", "xingchen-agi"]);
   for (const slug of slugs) {
     assert.ok(I.SLUG_TO_ID[slug] || monogramOnly.has(slug),
       `${slug} has neither a logo nor a monogram allowance — rebuild icons.js`);
